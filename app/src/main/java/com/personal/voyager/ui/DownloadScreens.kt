@@ -73,6 +73,7 @@ import com.personal.voyager.core.Prefs
 import com.personal.voyager.player.PlaybackService
 import com.personal.voyager.player.PlayerHub
 import com.personal.voyager.vm.AppViewModel
+import com.personal.voyager.vm.ClipLink
 import com.personal.voyager.vm.Screen
 import com.personal.voyager.yt.ChannelHeader
 import com.personal.voyager.yt.PlaylistHeader

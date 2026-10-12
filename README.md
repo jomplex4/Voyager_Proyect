@@ -4,7 +4,7 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
-## Versión 1.1.1 (final): qué cambió
+## Versión 1.1.3 (final): qué cambió
 
 - **Carpeta propia:** todo se guarda en `Voyager` (almacenamiento interno, raíz). La primera vez la app muestra una pantalla pidiendo "Acceso a todos los archivos"; es el único permiso que existe en Android para crear una carpeta en la raíz. Los archivos parciales van a `Voyager/.tmp` (oculta), así que los datos de la app ya no crecen.
 - **Sin notificaciones de descarga:** Android obliga a tener un servicio para que las descargas sigan con la pantalla apagada, pero ahora usa un canal bloqueado y no muestra nada. Solo queda la notificación multimedia cuando reproduces una vista previa.
@@ -56,8 +56,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.1.3
+git push origin v1.1.3
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -83,7 +83,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.1.1`, `git push origin v1.1.1`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.1.3`, `git push origin v1.1.3`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 
