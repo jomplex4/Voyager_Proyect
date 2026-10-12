@@ -29,3 +29,11 @@
     private void writeObject(java.io.ObjectOutputStream);
     private void readObject(java.io.ObjectInputStream);
 }
+# Clases que solo son anotaciones y no existen en tiempo de ejecucion
+-dontwarn org.jspecify.annotations.**
+-dontwarn org.jspecify.**
+-dontwarn javax.annotation.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn org.checkerframework.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
+-ignorewarnings
