@@ -38,7 +38,7 @@ class Spec(
     val uploader: String = "",
 )
 
-/** Process-wide download queue. Max 2 concurrent jobs, the rest wait in line. */
+/** Process-wide download queue. Max 2 jobs DOWNLOADING at once; any number can be processing. */
 object Downloads {
     private const val MAX_CONCURRENT = 2
 
@@ -161,7 +161,8 @@ object Downloads {
 
     private fun pump() {
         synchronized(lock) {
-            var slots = MAX_CONCURRENT - _jobs.value.count { it.running }
+            // Only jobs that are downloading count toward the limit; merging/encoding jobs never block the queue.
+            var slots = MAX_CONCURRENT - _jobs.value.count { it.status == JobStatus.ACTIVE }
             for (j in _jobs.value) {
                 if (slots <= 0) break
                 if (j.status == JobStatus.QUEUED && !running.containsKey(j.id)) {
@@ -289,6 +290,7 @@ object Downloads {
 
         // 2) process (no pause while this runs)
         update(id) { it.copy(status = JobStatus.PROCESSING, progress = 0.95f, speedBps = 0, downloaded = files.sumOf { f -> f.length() }) }
+        pump() // this job no longer uses a download slot: the next waiting one can start now
         fun proc(p: Float) = update(id) { it.copy(progress = (0.95f + 0.05f * p).coerceIn(0.95f, 0.999f)) }
 
         val title = job.title

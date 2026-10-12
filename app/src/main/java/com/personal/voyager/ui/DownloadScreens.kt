@@ -119,15 +119,29 @@ fun HomeScreen(vm: AppViewModel) {
                     modifier = Modifier.padding(start = w * (35f / 720f)).width(w * (307f / 720f)),
                 )
                 Spacer(Modifier.weight(1f))
+                IconTap(R.drawable.ic_person, { vm.push(Screen.Facebook) }, size = 24.dp)
                 IconTap(R.drawable.ic_search, { vm.push(Screen.Search()) }, size = 26.dp)
                 Spacer(Modifier.width(8.dp))
             }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-            if (vm.clips.isEmpty()) {
-                item { CenterMessage("Copy a YouTube or Facebook link and it will show up here", Modifier.padding(top = 140.dp)) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                vm.purgeClips()
+                delay(20_000)
             }
-            itemsIndexed(vm.clips) { _, c -> ClipRow(vm, c) }
+        }
+        if (vm.clips.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 40.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Copy a YouTube or Facebook link and it will show up here",
+                    style = Txt.Body.copy(color = Pal.Gray),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                itemsIndexed(vm.clips) { _, c -> ClipRow(vm, c) }
+            }
         }
     }
 }
@@ -299,6 +313,17 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
 @Composable
 fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     val ctx = LocalContext.current
+    val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !Prefs.askedNotifications &&
+            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Prefs.askedNotifications = true
+            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     var info by remember(s.url) { mutableStateOf<StreamInfo?>(null) }
     var error by remember(s.url) { mutableStateOf<String?>(null) }
     var previewFailed by remember(s.url) { mutableStateOf(false) }

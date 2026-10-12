@@ -37,11 +37,12 @@ sealed class Screen {
     data class Playlist(val url: String, val name: String?) : Screen()
     data object PlayHome : Screen()
     data object Downloading : Screen()
+    data object Facebook : Screen()
 }
 
 enum class Tab { DOWNLOAD, PLAY }
 
-class ClipLink(val url: String, val thumb: String?)
+class ClipLink(val url: String, val thumb: String?, val at: Long, val key: String)
 
 class SheetRow(
     val id: String,
@@ -76,6 +77,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     val dlStack = mutableStateListOf<Screen>(Screen.Home)
     val playStack = mutableStateListOf<Screen>(Screen.PlayHome)
     var fullscreen by mutableStateOf(false)
+    var fbLoginPrompt by mutableStateOf(false)
     val clips = mutableStateListOf<ClipLink>()
     var sheet by mutableStateOf<SheetUi?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
@@ -85,12 +87,13 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private var pendingClip: String? = null
 
     init {
-        Prefs.clips().forEach { clips.add(ClipLink(it.first, it.second)) }
+        Prefs.clips().forEach { clips.add(ClipLink(it.url, it.thumb, it.at, it.key)) }
+        purgeClips()
         dismissed.addAll(Prefs.dismissedClips())
     }
 
     private fun saveClips() {
-        Prefs.saveClips(clips.map { it.url to it.thumb })
+        Prefs.saveClips(clips.map { Prefs.ClipRec(it.url, it.thumb, it.at, it.key) })
         Prefs.saveDismissed(dismissed.toList().takeLast(40))
     }
 
@@ -166,23 +169,41 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ---------------- clipboard ----------------
 
+    /** Copied links live for 10 minutes: nothing piles up and nothing stale is shown. */
+    fun purgeClips() {
+        val now = System.currentTimeMillis()
+        val old = clips.filter { now - it.at > CLIP_TTL_MS }
+        if (old.isNotEmpty()) {
+            clips.removeAll(old.toSet())
+            old.forEach { dismissed.add(it.key) }
+            saveClips()
+        }
+    }
+
     fun readClipboard() {
+        purgeClips()
         val cm = app.getSystemService(ClipboardManager::class.java) ?: return
         val text = runCatching {
             cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()
         }.getOrNull()
         val url = Links.firstUrl(text)
         if (url == null || !Links.isSupported(url)) return
-        if (url in dismissed || clips.any { it.url == url }) return
-        clips.add(0, ClipLink(url, Links.thumbForYoutube(url)))
+        val ts = runCatching { cm.primaryClipDescription?.timestamp ?: 0L }.getOrDefault(0L)
+        val now = System.currentTimeMillis()
+        if (ts > 0 && now - ts > CLIP_TTL_MS) return
+        val key = "$url@$ts"
+        if (key in dismissed || clips.any { it.key == key }) return
+        clips.removeAll { it.url == url }
+        clips.add(0, ClipLink(url, Links.thumbForYoutube(url), if (ts > 0) ts else now, key))
         while (clips.size > 30) clips.removeAt(clips.lastIndex)
         saveClips()
         if (Links.isFacebook(url)) {
             viewModelScope.launch {
                 val info = runCatching { Facebook.fetch(url) }.getOrNull() ?: return@launch
-                val idx = clips.indexOfFirst { it.url == url }
+                val idx = clips.indexOfFirst { it.key == key }
                 if (idx >= 0) {
-                    clips[idx] = ClipLink(url, info.thumb)
+                    val c = clips[idx]
+                    clips[idx] = ClipLink(url, info.thumb, c.at, c.key)
                     saveClips()
                 }
             }
@@ -191,19 +212,19 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun dismissClip(c: ClipLink) {
         clips.remove(c)
-        dismissed.add(c.url)
+        dismissed.add(c.key)
         saveClips()
     }
 
     /** Called after a download starts from a copied link: that link leaves the list. */
     fun dismissClip() {
-        val u = pendingClip ?: return
+        val k = pendingClip ?: return
         pendingClip = null
-        clips.firstOrNull { it.url == u }?.let { dismissClip(it) }
+        clips.firstOrNull { it.key == k }?.let { dismissClip(it) }
     }
 
     fun downloadFromClip(c: ClipLink) {
-        pendingClip = c.url
+        pendingClip = c.key
         if (Links.isFacebook(c.url)) {
             downloadFacebook(c.url, true)
             return
@@ -366,7 +387,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Throwable) {
                 sheet = null
-                say(YtRepo.friendly(e))
+                if (e is Facebook.FbException && e.loginNeeded) fbLoginPrompt = true
+                else say(YtRepo.friendly(e))
             }
         }
     }
@@ -398,6 +420,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        const val CLIP_TTL_MS = 10 * 60 * 1000L
         const val MP3_SUB = "Compatible with Bluetooth speakers, phones, car stereos, smartwatches"
     }
 }

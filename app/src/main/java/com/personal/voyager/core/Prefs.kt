@@ -29,21 +29,28 @@ object Prefs {
         sp.edit().remove("recents").apply()
     }
 
-    /** Copied links shown on the home screen: (url, thumbnail). */
-    fun clips(): List<Pair<String, String?>> {
+    class ClipRec(val url: String, val thumb: String?, val at: Long, val key: String)
+
+    /** Copied links shown on the home screen. */
+    fun clips(): List<ClipRec> {
         val raw = sp.getString("clips", null) ?: return emptyList()
         return runCatching {
             val a = JSONArray(raw)
             List(a.length()) { i ->
                 val o = a.getJSONObject(i)
-                o.getString("u") to (if (o.isNull("t")) null else o.getString("t"))
+                ClipRec(
+                    o.getString("u"), if (o.isNull("t")) null else o.getString("t"),
+                    o.optLong("a", 0L), o.optString("k", o.getString("u")),
+                )
             }
         }.getOrDefault(emptyList())
     }
 
-    fun saveClips(list: List<Pair<String, String?>>) {
+    fun saveClips(list: List<ClipRec>) {
         val a = JSONArray()
-        list.forEach { (u, t) -> a.put(JSONObject().put("u", u).put("t", t ?: JSONObject.NULL)) }
+        list.forEach { c ->
+            a.put(JSONObject().put("u", c.url).put("t", c.thumb ?: JSONObject.NULL).put("a", c.at).put("k", c.key))
+        }
         sp.edit().putString("clips", a.toString()).apply()
     }
 
@@ -58,6 +65,11 @@ object Prefs {
     fun saveDismissed(list: List<String>) {
         sp.edit().putString("clips_dismissed", JSONArray(list).toString()).apply()
     }
+
+    /** True once the notification permission dialog was shown (only needed on Android 13+). */
+    var askedNotifications: Boolean
+        get() = sp.getBoolean("asked_notif", false)
+        set(v) = sp.edit().putBoolean("asked_notif", v).apply()
 
     /** Last format choice, e.g. "A:MP3_320K" or "V:720". */
     var lastChoice: String

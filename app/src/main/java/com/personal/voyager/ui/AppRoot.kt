@@ -167,9 +167,36 @@ private fun AppRoot(vm: AppViewModel) {
                 is Screen.Playlist -> PlaylistScreen(vm, s)
                 is Screen.PlayHome -> PlayHomeScreen(vm)
                 is Screen.Downloading -> DownloadingScreen(vm)
+                is Screen.Facebook -> FacebookScreen(vm)
             }
         }
         if (!fs && !imeVisible) BottomBar(vm)
+    }
+
+    if (vm.fbLoginPrompt) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.fbLoginPrompt = false },
+            containerColor = Pal.Card2,
+            title = { Text("Log in to Facebook", style = Txt.Title) },
+            text = {
+                Text(
+                    "This video is private or needs an account. Log in once and VOYAGER can download the videos you are allowed to watch.",
+                    style = Txt.Body.copy(color = Pal.Gray),
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    vm.fbLoginPrompt = false
+                    vm.tab = Tab.DOWNLOAD
+                    vm.push(Screen.Facebook)
+                }) { Text("Log in", style = Txt.Label.copy(color = Pal.RedBright)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { vm.fbLoginPrompt = false }) {
+                    Text("Not now", style = Txt.Label.copy(color = Pal.White))
+                }
+            },
+        )
     }
 
     when (val sh = vm.sheet) {
