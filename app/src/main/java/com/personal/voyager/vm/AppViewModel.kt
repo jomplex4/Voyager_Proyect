@@ -54,13 +54,17 @@ class SheetRow(
 class SheetData(
     val title: String,
     val thumb: String?,
-    val domain: String,
+    domain: String,
     val fromClipboard: Boolean,
-    val audio: List<SheetRow>,
-    val video: List<SheetRow>,
+    audioInit: List<SheetRow>,
+    videoInit: List<SheetRow>,
     val preselect: String?,
     val onConfirm: (String) -> Unit,
-)
+) {
+    var domain by mutableStateOf(domain)
+    var audio by mutableStateOf(audioInit)
+    var video by mutableStateOf(videoInit)
+}
 
 sealed class SheetUi {
     data object Loading : SheetUi()
@@ -72,12 +76,23 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     val dlStack = mutableStateListOf<Screen>(Screen.Home)
     val playStack = mutableStateListOf<Screen>(Screen.PlayHome)
     var fullscreen by mutableStateOf(false)
-    var clip by mutableStateOf<ClipLink?>(null)
+    val clips = mutableStateListOf<ClipLink>()
     var sheet by mutableStateOf<SheetUi?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     private var sheetJob: Job? = null
-    private var dismissedClip: String? = null
+    private val dismissed = LinkedHashSet<String>()
+    private var pendingClip: String? = null
+
+    init {
+        Prefs.clips().forEach { clips.add(ClipLink(it.first, it.second)) }
+        dismissed.addAll(Prefs.dismissedClips())
+    }
+
+    private fun saveClips() {
+        Prefs.saveClips(clips.map { it.url to it.thumb })
+        Prefs.saveDismissed(dismissed.toList().takeLast(40))
+    }
 
     private fun stack() = if (tab == Tab.DOWNLOAD) dlStack else playStack
     val current: Screen get() = stack().last()
@@ -158,23 +173,37 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }.getOrNull()
         val url = Links.firstUrl(text)
         if (url == null || !Links.isSupported(url)) return
-        if (url == dismissedClip || clip?.url == url) return
-        clip = ClipLink(url, Links.thumbForYoutube(url))
+        if (url in dismissed || clips.any { it.url == url }) return
+        clips.add(0, ClipLink(url, Links.thumbForYoutube(url)))
+        while (clips.size > 30) clips.removeAt(clips.lastIndex)
+        saveClips()
         if (Links.isFacebook(url)) {
             viewModelScope.launch {
                 val info = runCatching { Facebook.fetch(url) }.getOrNull() ?: return@launch
-                if (clip?.url == url) clip = ClipLink(url, info.thumb)
+                val idx = clips.indexOfFirst { it.url == url }
+                if (idx >= 0) {
+                    clips[idx] = ClipLink(url, info.thumb)
+                    saveClips()
+                }
             }
         }
     }
 
-    fun dismissClip() {
-        dismissedClip = clip?.url
-        clip = null
+    fun dismissClip(c: ClipLink) {
+        clips.remove(c)
+        dismissed.add(c.url)
+        saveClips()
     }
 
-    fun downloadFromClip() {
-        val c = clip ?: return
+    /** Called after a download starts from a copied link: that link leaves the list. */
+    fun dismissClip() {
+        val u = pendingClip ?: return
+        pendingClip = null
+        clips.firstOrNull { it.url == u }?.let { dismissClip(it) }
+    }
+
+    fun downloadFromClip(c: ClipLink) {
+        pendingClip = c.url
         if (Links.isFacebook(c.url)) {
             downloadFacebook(c.url, true)
             return
@@ -239,14 +268,15 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         val title = info.name ?: ""
         val url = info.url
         val dur = info.duration
+        val uploader = info.uploaderName ?: ""
         sheet = SheetUi.Ready(
             SheetData(
                 title = title, thumb = thumb, domain = Links.domain(url).ifEmpty { "youtube.com" },
-                fromClipboard = fromClipboard, audio = audio, video = video,
+                fromClipboard = fromClipboard, audioInit = audio, videoInit = video,
                 preselect = pickPreselect(audio, video),
             ) { choice ->
                 Prefs.lastChoice = choice
-                enqueue(listOf(Spec("yt", url, title, thumb, dur, choice)))
+                enqueue(listOf(Spec("yt", url, title, thumb, dur, choice, uploader = uploader)))
                 if (fromClipboard) dismissClip()
             }
         )
@@ -254,27 +284,50 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun showPlaylistSheet(videos: List<Item.Video>, positions: List<Int>, title: String) {
         val n = videos.size
-        val label = "≈ $n video" + if (n == 1) "" else "s"
+        val totalSec = videos.sumOf { it.durationSec }
+        val domain = "youtube.com · $n video" + if (n == 1) "" else "s"
+        fun est(bytes: Long) = if (bytes > 0) "≈ " + Fmt.size(bytes) else ""
+        val typicalMbps = listOf(360 to 0.6, 480 to 0.9, 720 to 1.6, 1080 to 3.0)
+
         val audio = AudioKind.entries.map { k ->
-            SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", label, true)
+            SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", est(k.kbps * 125L * totalSec), true)
         }
-        val video = listOf(360, 480, 720, 1080).map { SheetRow("V:$it", "${it}p", null, label, false) }
-        sheet = SheetUi.Ready(
-            SheetData(
-                title = title, thumb = videos.firstOrNull()?.thumb, domain = "youtube.com",
-                fromClipboard = false, audio = audio, video = video,
-                preselect = pickPreselect(audio, video),
-            ) { choice ->
-                Prefs.lastChoice = choice
-                val specs = videos.mapIndexed { i, v ->
-                    Spec(
-                        "yt", v.url, v.title, v.thumb, v.durationSec, choice,
-                        prefix = String.format("%02d - ", positions.getOrElse(i) { i + 1 }),
-                    )
-                }
-                enqueue(specs)
+        val video = typicalMbps.map { (h, m) -> SheetRow("V:$h", "${h}p", null, est((m * 125_000 * totalSec).toLong()), false) }
+        val data = SheetData(
+            title = title, thumb = videos.firstOrNull()?.thumb, domain = domain,
+            fromClipboard = false, audioInit = audio, videoInit = video,
+            preselect = pickPreselect(audio, video),
+        ) { choice ->
+            Prefs.lastChoice = choice
+            val specs = videos.mapIndexed { i, v ->
+                Spec(
+                    "yt", v.url, v.title, v.thumb, v.durationSec, choice,
+                    prefix = String.format("%02d - ", positions.getOrElse(i) { i + 1 }),
+                    uploader = v.uploader,
+                )
             }
-        )
+            enqueue(specs)
+        }
+        sheet = SheetUi.Ready(data)
+
+        // Small selections get the real totals (the extraction is cached, so the downloads start faster too).
+        if (n <= 6) {
+            viewModelScope.launch {
+                val infos = coroutineScope {
+                    videos.map { v -> async { runCatching { YtRepo.stream(v.url) }.getOrNull() } }.map { it.await() }
+                }
+                if (infos.any { it == null }) return@launch
+                val ok = infos.filterNotNull()
+                data.audio = AudioKind.entries.map { k ->
+                    val total = ok.sumOf { i -> Formats.audioOptions(i).firstOrNull { it.kind == k }?.bytes ?: 0L }
+                    SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", est(total), true)
+                }
+                data.video = typicalMbps.map { (h, _) ->
+                    val total = ok.sumOf { i -> Formats.selectVideo(i, h)?.bytes ?: 0L }
+                    SheetRow("V:$h", "${h}p", null, est(total), false)
+                }
+            }
+        }
     }
 
     private fun downloadFacebook(url: String, fromClipboard: Boolean) {
@@ -301,11 +354,11 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 sheet = SheetUi.Ready(
                     SheetData(
                         title = info.title, thumb = info.thumb, domain = "facebook.com",
-                        fromClipboard = fromClipboard, audio = audio, video = video,
+                        fromClipboard = fromClipboard, audioInit = audio, videoInit = video,
                         preselect = pickPreselect(audio, video),
                     ) { choice ->
                         Prefs.lastChoice = choice
-                        enqueue(listOf(Spec("fb", info.pageUrl, info.title, info.thumb, info.durationSec, choice)))
+                        enqueue(listOf(Spec("fb", info.pageUrl, info.title, info.thumb, info.durationSec, choice, uploader = "Facebook")))
                         if (fromClipboard) dismissClip()
                     }
                 )

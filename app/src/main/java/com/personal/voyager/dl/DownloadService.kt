@@ -19,7 +19,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Keeps downloads alive in the background. Standard system progress notification, nothing custom. */
+/**
+ * Keeps downloads alive while the screen is off. Android requires a notification for this kind of service, so
+ * it uses a blocked channel: nothing is shown in the status bar or the notification shade.
+ */
 class DownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var collector: Job? = null
@@ -31,7 +34,7 @@ class DownloadService : Service() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.notif_channel_downloads), NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, getString(R.string.notif_channel_downloads), NotificationManager.IMPORTANCE_NONE)
         )
         wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "voyager:downloads")
     }

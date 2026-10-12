@@ -12,12 +12,14 @@ import java.nio.ByteOrder
 
 /** MediaCodec decode to PCM, then LAME (pure Java port) encode at constant bitrate. Blocking. */
 object Mp3 {
-    private const val QUALITY = 5 // 1 best/slowest ... 9 fastest. 5 keeps encoding fast on a low-end phone.
+    // 1 best/slowest ... 9 fastest. At 160K and above the difference is inaudible, so use the fast setting there.
+    private fun quality(kbps: Int) = if (kbps >= 160) 7 else 5
 
     fun encode(
         srcPath: String,
         outPath: String,
         kbps: Int,
+        header: ByteArray?,
         check: () -> Unit,
         onProgress: (Float) -> Unit,
     ) {
@@ -55,6 +57,7 @@ object Mp3 {
             var tick = 0
 
             BufferedOutputStream(FileOutputStream(outPath), 128 * 1024).use { out ->
+                if (header != null) out.write(header)
                 while (!outDone) {
                     if (++tick % 16 == 0) check()
                     if (!inDone) {
@@ -78,7 +81,7 @@ object Mp3 {
                         val rate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         floatPcm = f.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
                             f.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
-                        if (encoder == null) encoder = Mp3Encoder(minOf(channels, 2), rate, kbps, QUALITY)
+                        if (encoder == null) encoder = Mp3Encoder(minOf(channels, 2), rate, kbps, quality(kbps))
                     }
                     if (oi >= 0) {
                         val enc = encoder ?: throw IOException("Could not decode the audio")

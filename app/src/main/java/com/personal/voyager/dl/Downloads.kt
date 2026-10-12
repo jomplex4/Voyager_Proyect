@@ -2,7 +2,6 @@ package com.personal.voyager.dl
 
 import android.app.Application
 import android.content.Intent
-import android.net.Uri
 import android.os.StatFs
 import androidx.core.content.ContextCompat
 import com.personal.voyager.core.Names
@@ -13,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,9 +35,10 @@ class Spec(
     val durationSec: Long,
     val choice: String,
     val prefix: String = "",
+    val uploader: String = "",
 )
 
-/** Process-wide download queue. Max 2 concurrent jobs, the rest wait. */
+/** Process-wide download queue. Max 2 concurrent jobs, the rest wait in line. */
 object Downloads {
     private const val MAX_CONCURRENT = 2
 
@@ -69,12 +72,6 @@ object Downloads {
         _messages.tryEmit(msg)
     }
 
-    private fun tmpDir(): File {
-        val base = app.getExternalFilesDir("tmp") ?: File(app.filesDir, "tmp")
-        base.mkdirs()
-        return base
-    }
-
     private fun persist() = Store.saveQueue(_jobs.value)
 
     private fun update(id: String, save: Boolean = false, f: (DlJob) -> DlJob) {
@@ -95,12 +92,11 @@ object Downloads {
             val job = DlJob(
                 id = UUID.randomUUID().toString(), source = s.source, url = s.url, title = s.title,
                 thumb = s.thumb, durationSec = s.durationSec, choice = s.choice, prefix = s.prefix,
-                tag = tagFor(s.choice),
+                tag = tagFor(s.choice), uploader = s.uploader,
             )
             val exists = Store.existsBase(job.base) ||
                 _jobs.value.any { it.base.equals(job.base, true) } ||
-                fresh.any { it.base.equals(job.base, true) } ||
-                Saver.existsInStore(app, job.base, job.isAudio)
+                fresh.any { it.base.equals(job.base, true) }
             if (exists) dup++ else {
                 fresh.add(job)
                 added++
@@ -115,14 +111,17 @@ object Downloads {
         return added to dup
     }
 
+    /** A job that is already merging/encoding cannot be paused: pausing would redo that work. */
     fun pause(id: String) {
-        update(id, true) { if (it.status == JobStatus.FAILED) it else it.copy(status = JobStatus.PAUSED, speedBps = 0) }
+        val j = get(id) ?: return
+        if (j.status == JobStatus.PROCESSING || j.status == JobStatus.FAILED) return
+        update(id, true) { it.copy(status = JobStatus.PAUSED, speedBps = 0) }
         synchronized(lock) { running.remove(id) }?.cancel()
         pump()
     }
 
     fun pauseAll() {
-        _jobs.value.filter { it.status != JobStatus.FAILED }.forEach { pause(it.id) }
+        _jobs.value.forEach { pause(it.id) }
     }
 
     fun resume(id: String) {
@@ -183,25 +182,24 @@ object Downloads {
 
     private fun cleanParts(id: String) {
         runCatching {
-            tmpDir().listFiles()?.filter { it.name.startsWith("$id.") }?.forEach { it.delete() }
+            Storage.tmp().listFiles()?.filter { it.name.startsWith("$id.") }?.forEach { it.delete() }
         }
     }
 
     // ---------------- job pipeline ----------------
 
-    private class Meter(val job: String) {
+    private class Meter {
         var lastT = System.currentTimeMillis()
         var lastB = 0L
         var lastPush = 0L
     }
 
     private suspend fun runJob(id: String) {
-        val tmp = tmpDir()
         try {
             val job = get(id) ?: return
             var plan = Resolver.resolve(job)
             try {
-                execute(job, plan, tmp)
+                execute(job, plan)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -210,7 +208,7 @@ object Downloads {
                     toast("This quality could not be merged here, using H.264 instead")
                     cleanParts(id)
                     plan = Resolver.resolve(job, allowWebm = false)
-                    execute(job, plan, tmp)
+                    execute(job, plan)
                 } else throw e
             }
         } catch (e: CancellationException) {
@@ -222,16 +220,22 @@ object Downloads {
         }
     }
 
-    private suspend fun execute(job: DlJob, plan: Plan, tmp: File) {
+    private fun cleanArtist(s: String): String =
+        s.replace(Regex("\\s*-\\s*Topic$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("VEVO$", RegexOption.IGNORE_CASE), "").trim()
+
+    private suspend fun execute(job: DlJob, plan: Plan) {
         val id = job.id
         val ctx = currentCoroutineContext()
         val check = { ctx.ensureActive() }
 
+        Storage.prepare()
+        val tmp = Storage.tmp()
         val expected = plan.sources.sumOf { it.size.coerceAtLeast(0) }
         val estFinal = if (expected > 0) expected else 20L * 1024 * 1024
         val free = StatFs(tmp.absolutePath).availableBytes
         val needed = when (plan) {
-            is Plan.Merge -> (estFinal * 2.3).toLong()
+            is Plan.Merge -> (estFinal * 2.2).toLong()
             is Plan.Mp3 -> estFinal * 2
             else -> (estFinal * 2.1).toLong()
         }
@@ -240,7 +244,7 @@ object Downloads {
         update(id) { it.copy(tag = plan.tag, total = expected) }
 
         val files = plan.sources.indices.map { File(tmp, "$id.$it.part") }
-        val meter = Meter(id)
+        val meter = Meter()
 
         fun tick() {
             val now = System.currentTimeMillis()
@@ -258,33 +262,43 @@ object Downloads {
             update(id) { it.copy(downloaded = have, progress = (frac * 0.95).toFloat(), speedBps = if (speed >= 0) speed else it.speedBps) }
         }
 
-        // 1) download every source
-        for (i in plan.sources.indices) {
-            val src = plan.sources[i]
-            val sigFile = File(tmp, "$id.$i.sig")
-            if (sigFile.exists() && sigFile.readText() != src.sig) files[i].delete()
-            sigFile.writeText(src.sig)
-            val fetcher = Fetcher(src) {
-                val fresh = Resolver.resolve(job, allowWebm = !(plan is Plan.Merge && !plan.webm))
-                fresh.sources[i]
-            }
-            fetcher.into(files[i]) { tick() }
-        }
-        check()
-
-        // 2) process
-        update(id) { it.copy(status = JobStatus.PROCESSING, progress = 0.95f, speedBps = 0, downloaded = files.sumOf { f -> f.length() }) }
+        val isAudio = plan is Plan.M4a || plan is Plan.Mp3
         val out: File
         val ext: String
         val mime: String
-        val audio: Boolean
+        var cover: Cover.Result? = null
+
+        coroutineScope {
+            val coverJob = if (isAudio) async(Dispatchers.IO) { Cover.fetch(job) } else null
+
+            // 1) every source downloads at the same time (video + audio in parallel)
+            plan.sources.indices.map { i ->
+                launch(Dispatchers.IO) {
+                    val src = plan.sources[i]
+                    val sigFile = File(tmp, "$id.$i.sig")
+                    if (sigFile.exists() && sigFile.readText() != src.sig) files[i].delete()
+                    sigFile.writeText(src.sig)
+                    Fetcher(src) {
+                        Resolver.resolve(job, allowWebm = !(plan is Plan.Merge && !plan.webm), fresh = true).sources[i]
+                    }.into(files[i]) { tick() }
+                }
+            }.joinAll()
+            check()
+            cover = coverJob?.await()
+        }
+
+        // 2) process (no pause while this runs)
+        update(id) { it.copy(status = JobStatus.PROCESSING, progress = 0.95f, speedBps = 0, downloaded = files.sumOf { f -> f.length() }) }
         fun proc(p: Float) = update(id) { it.copy(progress = (0.95f + 0.05f * p).coerceIn(0.95f, 0.999f)) }
+
+        val title = job.title
+        val artist = cleanArtist(job.uploader)
+        val album = artist.ifEmpty { "Voyager" }
 
         when (plan) {
             is Plan.Merge -> {
                 ext = if (plan.webm) "webm" else "mp4"
                 mime = if (plan.webm) "video/webm" else "video/mp4"
-                audio = false
                 out = File(tmp, "$id.out.$ext")
                 withContext(Dispatchers.IO) {
                     Mux.mergeVideoAudio(files[0].absolutePath, files[1].absolutePath, out.absolutePath, plan.webm, check) { proc(it) }
@@ -293,41 +307,42 @@ object Downloads {
             is Plan.Direct -> {
                 ext = plan.ext
                 mime = plan.mime
-                audio = false
                 out = files[0]
             }
             is Plan.M4a -> {
                 ext = "m4a"
                 mime = "audio/mp4"
-                audio = true
                 out = File(tmp, "$id.out.m4a")
                 withContext(Dispatchers.IO) {
                     Mux.remuxAudioToM4a(files[0].absolutePath, out.absolutePath, check) { proc(it) }
+                    Tags.mp4(out, title, artist, album, cover?.tag)
                 }
             }
             is Plan.Mp3 -> {
                 ext = "mp3"
                 mime = "audio/mpeg"
-                audio = true
                 out = File(tmp, "$id.out.mp3")
+                val header = Tags.id3(title, artist, album, cover?.tag)
                 withContext(Dispatchers.Default) {
-                    Mp3.encode(files[0].absolutePath, out.absolutePath, plan.kbps, check) { proc(it) }
+                    Mp3.encode(files[0].absolutePath, out.absolutePath, plan.kbps, header, check) { proc(it) }
                 }
             }
         }
         check()
 
-        // 3) save to MediaStore + registry
+        // 3) move into the Voyager folder (a rename, instant) and register
         val fresh = get(id) ?: job
         val base = Names.base(fresh.prefix, fresh.title, plan.tag)
-        val finalName = "$base.$ext"
-        val uri: Uri = withContext(Dispatchers.IO) { Saver.save(app, out, finalName, mime, audio) }
-        val size = out.length()
-        val thumb = withContext(Dispatchers.IO) { Store.saveThumb(id, job.thumb) }
+        val dest = withContext(Dispatchers.IO) { Storage.move(out, "$base.$ext") }
+        Storage.scan(app, dest, mime)
+        val thumb = withContext(Dispatchers.IO) {
+            val c = cover
+            if (isAudio && c != null) Store.saveThumbBytes(id, c.thumb) else Store.saveThumb(id, job.thumb)
+        }
         Store.addDone(
             DoneItem(
-                id = id, base = base, title = job.title, tag = plan.tag, isAudio = audio,
-                durationSec = job.durationSec, size = size, uri = uri.toString(), thumbPath = thumb,
+                id = id, base = base, title = job.title, tag = plan.tag, isAudio = isAudio,
+                durationSec = job.durationSec, size = dest.length(), uri = dest.absolutePath, thumbPath = thumb,
                 mime = mime, createdAt = System.currentTimeMillis(),
             )
         )

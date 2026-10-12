@@ -7,7 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -48,11 +50,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -76,59 +81,52 @@ import kotlinx.coroutines.CancellationException
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
 
-// ---------------- clipboard card ----------------
+// ---------------- home: copied links ----------------
 
 @Composable
-fun ClipCard(vm: AppViewModel) {
-    val c = vm.clip ?: return
+fun ClipRow(vm: AppViewModel, c: ClipLink) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp)).background(Pal.Card2).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Thumb(c.thumb, Modifier.size(width = 64.dp, height = 48.dp), RoundedCornerShape(8.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("Link copied", style = Txt.Row)
-            Text(Links.short(c.url, 28), style = Txt.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (Links.isFacebook(c.url)) "Facebook" else "YouTube", style = Txt.Row)
+            Text(Links.short(c.url, 26), style = Txt.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(
-            Modifier.clip(RoundedCornerShape(50)).background(Pal.Red).clickable { vm.downloadFromClip() }
-                .padding(horizontal = 18.dp, vertical = 9.dp),
+            Modifier.clip(RoundedCornerShape(50)).background(Pal.Red).clickable { vm.downloadFromClip(c) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
         ) { Text("Download", style = Txt.Label.copy(color = Pal.White)) }
-        IconTap(R.drawable.ic_close, { vm.dismissClip() }, tint = Pal.Gray, size = 18.dp, box = 36.dp)
+        IconTap(R.drawable.ic_close, { vm.dismissClip(c) }, tint = Pal.Gray, size = 18.dp, box = 36.dp)
     }
 }
-
-// ---------------- home ----------------
 
 @Composable
 fun HomeScreen(vm: AppViewModel) {
     Column(Modifier.fillMaxSize()) {
-        ClipCard(vm)
-        Column(
-            Modifier.weight(1f).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            LogoTile(72.dp)
-            Spacer(Modifier.height(18.dp))
-            Text("VOYAGER", style = Txt.Wordmark)
-            Spacer(Modifier.height(40.dp))
-            Row(
-                Modifier.padding(horizontal = 24.dp).fillMaxWidth().height(56.dp)
-                    .clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Pal.Line), RoundedCornerShape(50))
-                    .background(Pal.Card).clickable { vm.push(Screen.Search()) }.padding(start = 18.dp, end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Ic(R.drawable.ic_download, tint = Pal.Gray, size = 22.dp)
-                Spacer(Modifier.width(12.dp))
-                Text("Search or paste a link", style = Txt.Body.copy(color = Pal.Gray), modifier = Modifier.weight(1f))
-                Box(Modifier.size(42.dp).clip(CircleShape).background(Pal.Red), contentAlignment = Alignment.Center) {
-                    Ic(R.drawable.ic_search, size = 22.dp)
-                }
+        // Same proportions as the reference screenshot: logo about 43% of the width, magnifier at the right.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val w = maxWidth
+            Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(R.drawable.dm_logo),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.padding(start = w * (35f / 720f)).width(w * (307f / 720f)),
+                )
+                Spacer(Modifier.weight(1f))
+                IconTap(R.drawable.ic_search, { vm.push(Screen.Search()) }, size = 26.dp)
+                Spacer(Modifier.width(8.dp))
             }
-            Spacer(Modifier.height(72.dp))
+        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            if (vm.clips.isEmpty()) {
+                item { CenterMessage("Copy a YouTube or Facebook link and it will show up here", Modifier.padding(top = 140.dp)) }
+            }
+            itemsIndexed(vm.clips) { _, c -> ClipRow(vm, c) }
         }
     }
 }
@@ -142,6 +140,17 @@ fun SearchScreen(vm: AppViewModel, initial: String) {
     var recents by remember { mutableStateOf(Prefs.recents()) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { YtRepo.warmUp() }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(text) {
+        val q = text.trim()
+        if (q.length < 2 || Links.firstUrl(q) != null) {
+            suggestions = emptyList()
+        } else {
+            delay(220)
+            suggestions = YtRepo.suggestions(q)
+        }
+    }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(
@@ -168,8 +177,20 @@ fun SearchScreen(vm: AppViewModel, initial: String) {
             )
             if (text.isNotEmpty()) IconTap(R.drawable.ic_close, { text = "" }, tint = Pal.Gray, size = 20.dp)
         }
-        ClipCard(vm)
-        if (recents.isNotEmpty()) {
+        if (text.isNotBlank() && suggestions.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                suggestions.forEach { sg ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.submit(sg) }.padding(horizontal = 20.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Ic(R.drawable.ic_search, tint = Pal.Gray, size = 20.dp)
+                        Spacer(Modifier.width(16.dp))
+                        Text(sg, style = Txt.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        } else if (text.isBlank() && recents.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,

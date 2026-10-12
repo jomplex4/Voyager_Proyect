@@ -25,6 +25,7 @@ data class DlJob(
     val downloaded: Long = 0L,
     val total: Long = 0L,
     val createdAt: Long = System.currentTimeMillis(),
+    val uploader: String = "",
 ) {
     val isAudio: Boolean get() = choice.startsWith("A:")
     val base: String get() = Names.base(prefix, title, tag)

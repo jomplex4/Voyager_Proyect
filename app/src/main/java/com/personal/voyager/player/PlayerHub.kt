@@ -103,8 +103,8 @@ object PlayerHub {
             .build()
 
         val muxed = info.videoStreams
-            .filter { progressive(it) && it.height in 100..480 }
-            .minByOrNull { abs(it.height - 360) }
+            .filter { progressive(it) && Formats.labelHeight(it) in 100..480 }
+            .minByOrNull { abs(Formats.labelHeight(it) - 360) }
 
         val source: MediaSource
         if (muxed != null) {
@@ -114,8 +114,8 @@ object PlayerHub {
             )
         } else {
             val v = info.videoOnlyStreams
-                .filter { progressive(it) && it.height in 100..480 }
-                .sortedWith(compareBy({ if (it.format == MediaFormat.MPEG_4) 0 else 1 }, { abs(it.height - 360) }))
+                .filter { progressive(it) && Formats.labelHeight(it) in 100..480 }
+                .sortedWith(compareBy({ if (it.format == MediaFormat.MPEG_4) 0 else 1 }, { abs(Formats.labelHeight(it) - 360) }))
                 .firstOrNull() ?: return false
             val a = Formats.pickM4a(info) ?: Formats.pickOpus(info) ?: return false
             val f = factory(v.content)

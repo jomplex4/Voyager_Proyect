@@ -6,6 +6,8 @@ import com.personal.voyager.core.Net
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import okhttp3.ResponseBody
+import okio.Buffer
 import java.io.IOException
 
 /** Public Facebook videos only (no login). Isolated here because Facebook changes its pages often. */
@@ -51,7 +53,7 @@ object Facebook {
             .build()
         Net.client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) return null
-            val html = r.body?.string() ?: return null
+            val html = readUseful(r.body ?: return null)
             val finalUrl = r.request.url.toString()
             val hd = hdKeys.firstNotNullOfOrNull { find(html, it) }
             val sd = sdKeys.firstNotNullOfOrNull { find(html, it) }
@@ -63,6 +65,22 @@ object Facebook {
                 ?.groupValues?.get(1)?.toLongOrNull()?.div(1000) ?: 0L
             return Info(finalUrl, title, thumb, hd, sd, dur)
         }
+    }
+
+    /** Reads the page in chunks and stops soon after the video links appear (the page is often 2 MB or more). */
+    private fun readUseful(body: ResponseBody): String {
+        val sb = StringBuilder()
+        val source = body.source()
+        val buf = Buffer()
+        var foundAt = -1
+        val keys = (hdKeys + sdKeys).map { "\"$it\"" }
+        while (sb.length < 3_000_000) {
+            if (source.read(buf, 65536L) < 0L) break
+            sb.append(buf.readUtf8())
+            if (foundAt < 0 && keys.any { sb.contains(it) }) foundAt = sb.length
+            if (foundAt >= 0 && sb.length - foundAt > 120_000) break
+        }
+        return sb.toString()
     }
 
     private fun idOf(url: String): String? =

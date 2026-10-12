@@ -4,6 +4,21 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 1.1.1 (final): qué cambió
+
+- **Carpeta propia:** todo se guarda en `Voyager` (almacenamiento interno, raíz). La primera vez la app muestra una pantalla pidiendo "Acceso a todos los archivos"; es el único permiso que existe en Android para crear una carpeta en la raíz. Los archivos parciales van a `Voyager/.tmp` (oculta), así que los datos de la app ya no crecen.
+- **Sin notificaciones de descarga:** Android obliga a tener un servicio para que las descargas sigan con la pantalla apagada, pero ahora usa un canal bloqueado y no muestra nada. Solo queda la notificación multimedia cuando reproduces una vista previa.
+- **Calidades de video corregidas:** los videos panorámicos (cine) aparecían como 536p, 804p, 1072p. Ahora se etiquetan como YouTube (360p, 480p, 720p, 1080p, 1440p, 2160p).
+- **Portada y datos en el audio:** MP3 y M4A llevan portada, título, artista (el canal) y álbum (el canal).
+- **Más rápido:** video y audio se descargan a la vez, se mueve el archivo sin copiarlo, la extracción de YouTube se reutiliza, Facebook deja de leer la página en cuanto encuentra el video.
+- **Sugerencias de búsqueda** mientras escribes.
+- **Listas y cursos:** muestra el peso total de la selección (exacto hasta 6 videos, estimado si son más).
+- **Descargas:** 2 a la vez, el resto en espera. Al procesar ya no se puede pausar (así no se repite el trabajo). Botones más pequeños y mejor ubicados; "Pause all" arriba. Los audios muestran el disco de vinilo desde que empiezan.
+- **Portada limpia:** arriba el logo de DIGITALMINDS y la lupa; la barra de búsqueda aparece al tocar la lupa. Todo el espacio de abajo es la lista de links copiados de YouTube y Facebook (hasta 30, con su botón Download y una X para quitarlos).
+- **Ícono** con más negro, conservando los difuminados.
+
+Las descargas de la versión 1.0.0 siguen apareciendo en Play (están en Música/VOYAGER y Películas/VOYAGER). Se instala encima sin perder nada.
+
 ## 1. Descomprimir y abrir en VS Code
 
 1. Crea una carpeta nueva, por ejemplo `C:\Proyectos\VOYAGER`.
@@ -41,8 +56,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.1
+git push origin v1.1.1
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -68,7 +83,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.0.1`, `git push origin v1.0.1`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.1.1`, `git push origin v1.1.1`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

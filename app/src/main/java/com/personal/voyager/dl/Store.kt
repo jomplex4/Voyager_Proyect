@@ -1,7 +1,6 @@
 package com.personal.voyager.dl
 
 import android.content.Context
-import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.personal.voyager.core.Net
@@ -51,7 +50,7 @@ object Store {
                     .put("thumb", j.thumb ?: JSONObject.NULL).put("dur", j.durationSec)
                     .put("choice", j.choice).put("prefix", j.prefix).put("tag", j.tag)
                     .put("status", j.status.name).put("error", j.error ?: JSONObject.NULL)
-                    .put("created", j.createdAt)
+                    .put("created", j.createdAt).put("up", j.uploader)
             )
         }
         runCatching { queueFile.writeText(a.toString()) }
@@ -75,6 +74,7 @@ object Store {
                     status = if (st == JobStatus.FAILED) JobStatus.FAILED else JobStatus.PAUSED,
                     error = if (o.isNull("error")) null else o.getString("error"),
                     createdAt = o.optLong("created", System.currentTimeMillis()),
+                    uploader = o.optString("up", ""),
                 )
             }
         }.getOrDefault(emptyList())
@@ -103,7 +103,7 @@ object Store {
             }.getOrDefault(emptyList())
         }
         // Drop entries whose file no longer exists in MediaStore.
-        val alive = items.filter { Saver.uriExists(ctx, Uri.parse(it.uri)) }
+        val alive = items.filter { Storage.exists(ctx, it.uri) }
         _library.value = alive.sortedByDescending { it.createdAt }
         if (alive.size != items.size) persistLibrary()
     }
@@ -130,7 +130,7 @@ object Store {
     fun removeDone(ids: Set<String>) {
         val victims = _library.value.filter { it.id in ids }
         for (v in victims) {
-            Saver.delete(ctx, Uri.parse(v.uri))
+            Storage.delete(ctx, v.uri, v.mime)
             v.thumbPath?.let { runCatching { File(it).delete() } }
         }
         _library.update { list -> list.filter { it.id !in ids } }
@@ -138,7 +138,13 @@ object Store {
     }
 
     fun existsBase(base: String): Boolean =
-        _library.value.any { it.base.equals(base, ignoreCase = true) }
+        _library.value.any { it.base.equals(base, ignoreCase = true) } || Storage.existsBase(base)
+
+    fun saveThumbBytes(id: String, bytes: ByteArray): String? = runCatching {
+        val f = File(thumbDir, "$id.jpg")
+        f.writeBytes(bytes)
+        f.absolutePath
+    }.getOrNull()
 
     /** Downloads a small JPEG copy of the thumbnail so the Play tab works offline. */
     fun saveThumb(id: String, url: String?): String? {

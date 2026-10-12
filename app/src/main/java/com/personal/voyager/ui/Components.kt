@@ -29,6 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -85,6 +88,33 @@ fun Thumb(model: Any?, modifier: Modifier = Modifier, shape: androidx.compose.ui
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+}
+
+/** Vinyl record: grooves, a soft highlight and the cover as the center label. Used for every audio item. */
+@Composable
+fun VinylThumb(model: Any?, diameter: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(diameter).drawBehind {
+            val r = this.size.minDimension / 2f
+            drawCircle(Color(0xFF0C0C0E))
+            var rr = r * 0.97f
+            while (rr > r * 0.62f) {
+                drawCircle(Color(0x16FFFFFF), radius = rr, style = Stroke(width = 1f))
+                rr -= r * 0.045f
+            }
+            drawCircle(
+                brush = Brush.sweepGradient(
+                    listOf(Color.Transparent, Color(0x26FFFFFF), Color.Transparent, Color(0x26FFFFFF), Color.Transparent)
+                ),
+                radius = r,
+            )
+            drawCircle(Color(0xFF2A2B2E), radius = r - 1f, style = Stroke(width = 2f))
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Thumb(model, Modifier.size(diameter * 0.5f), CircleShape)
+        Box(Modifier.size(diameter * 0.07f).clip(CircleShape).background(Color.Black))
     }
 }
 

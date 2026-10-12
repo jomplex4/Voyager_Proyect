@@ -28,8 +28,9 @@ android {
         applicationId = "com.personal.voyager"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.1.1"
+        resourceConfigurations += listOf("en")
     }
 
     signingConfigs {

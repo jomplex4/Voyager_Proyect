@@ -147,8 +147,39 @@ object YtRepo {
         Paged(p.items.mapNotNull { toItem(it) }, if (p.hasNextPage()) p.nextPage else null)
     }
 
-    suspend fun stream(url: String): StreamInfo = withContext(Dispatchers.IO) {
-        StreamInfo.getInfo(service, url)
+    private class Cached(val info: StreamInfo, val at: Long)
+
+    /** Last few extractions, so Detail -> Download -> job start do not extract the same video three times. */
+    private val cache = object : LinkedHashMap<String, Cached>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Cached>?): Boolean = size > 10
+    }
+
+    suspend fun stream(url: String, fresh: Boolean = false): StreamInfo = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (!fresh) {
+            val hit = synchronized(cache) { cache[url]?.takeIf { now - it.at < 10 * 60_000 } }
+            if (hit != null) return@withContext hit.info
+        }
+        val info = StreamInfo.getInfo(service, url)
+        synchronized(cache) {
+            cache[url] = Cached(info, now)
+            cache[info.url] = Cached(info, now)
+        }
+        info
+    }
+
+    suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        runCatching { service.suggestionExtractor.suggestionList(query) }.getOrDefault(emptyList()).take(8)
+    }
+
+    @Volatile
+    private var warmed = false
+
+    /** Primes the connection and YouTube's session data while the user is still typing. */
+    suspend fun warmUp() {
+        if (warmed) return
+        warmed = true
+        runCatching { search("a", VIDEOS, null) }
     }
 
     fun related(info: StreamInfo): List<Item> = info.relatedItems.mapNotNull { toItem(it) }

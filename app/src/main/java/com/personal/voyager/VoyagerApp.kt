@@ -27,7 +27,7 @@ class VoyagerApp : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("img"))
-                    .maxSizeBytes(32L * 1024 * 1024)
+                    .maxSizeBytes(16L * 1024 * 1024)
                     .build()
             }
             .allowRgb565(true)

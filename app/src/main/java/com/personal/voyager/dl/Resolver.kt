@@ -16,8 +16,8 @@ import org.schabi.newpipe.extractor.stream.StreamType
 /** Turns a queued job into concrete URLs. Called again when stream URLs expire. */
 object Resolver {
 
-    suspend fun resolve(job: DlJob, allowWebm: Boolean = true): Plan = withContext(Dispatchers.IO) {
-        if (job.source == "fb") resolveFb(job) else resolveYt(job, allowWebm)
+    suspend fun resolve(job: DlJob, allowWebm: Boolean = true, fresh: Boolean = false): Plan = withContext(Dispatchers.IO) {
+        if (job.source == "fb") resolveFb(job) else resolveYt(job, allowWebm, fresh)
     }
 
     private fun ytUa(url: String): String =
@@ -29,8 +29,8 @@ object Resolver {
         return Src(s.content, size, "${s.id}:$size", ytUa(s.content))
     }
 
-    private suspend fun resolveYt(job: DlJob, allowWebm: Boolean): Plan {
-        val info = YtRepo.stream(job.url)
+    private suspend fun resolveYt(job: DlJob, allowWebm: Boolean, fresh: Boolean): Plan {
+        val info = YtRepo.stream(job.url, fresh)
         if (info.streamType == StreamType.LIVE_STREAM || info.streamType == StreamType.AUDIO_LIVE_STREAM) {
             throw LiveStreamException()
         }
