@@ -4,6 +4,19 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 1.2.2: abrir archivos en tu reproductor
+
+- Al tocar un archivo descargado, VOYAGER lo abre en tu reproductor como una app aparte (su propia ventana en recientes), no dentro de VOYAGER.
+- El reproductor recibe la dirección permanente del archivo (la misma que usan las galerías y los reproductores de música), en vez de un permiso temporal. Antes, al salir del reproductor el permiso se cancelaba mientras el reproductor seguía activo, y al terminar la canción intentaba reabrir el archivo sin permiso, fallaba y reintentaba sin parar, lo que calentaba y laggeaba el teléfono.
+- Nota: cortar la reproducción y borrar la notificación al salir con la flecha es una decisión del reproductor, no de VOYAGER.
+
+## Versión 1.2.1: correcciones urgentes
+
+- **Notificación de reproducción:** ahora sí aparece la notificación estándar de Android al reproducir una vista previa de YouTube en segundo plano. Antes la sesión de reproducción no se registraba y Android no la mostraba.
+- **Sin notificación de descarga:** el canal visible de la versión 1.0.0 seguía instalado en el teléfono (Android no deja cambiar un canal ya creado). Ahora se borra y se usa uno nuevo y bloqueado. Además la notificación interna ya no se redibuja varias veces por segundo, que era lo que más cargaba al sistema.
+- **Teléfono lento y caliente:** el mezclado de video y la conversión a MP3 corren con prioridad baja para no competir con la pantalla y los botones del sistema. Se agregaron guardas contra descargas o conversiones que se queden "pegadas" y contra un indicador de carga que no terminaba.
+- **Reproductor:** botones exactamente un 20% más grandes.
+
 ## Versión 1.2.0: lo nuevo
 
 - **Facebook con tu cuenta:** el ícono de persona (arriba, junto a la lupa) abre el inicio de sesión de Facebook dentro de la app. Es la página normal de Facebook: VOYAGER no ve tu contraseña, la sesión queda guardada solo en el teléfono y se usa únicamente para abrir videos que tu cuenta ya puede ver (privados, de amigos, de grupos). Si intentas descargar un video privado sin sesión, la app te lo pide sola. Se cierra con "Log out". El enlace al video solo se envía a facebook.com y a nadie más.
@@ -65,8 +78,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.2
+git push origin v1.2.2
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -92,7 +105,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.2.0`, `git push origin v1.2.0`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.2.2`, `git push origin v1.2.2`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

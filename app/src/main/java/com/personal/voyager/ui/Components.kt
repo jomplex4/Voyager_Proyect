@@ -290,7 +290,7 @@ class Pager(
                 first = false
                 items = (items + r.items).take(maxItems)
                 next = r.next
-                if (r.next == null || items.size >= maxItems) done = true
+                if (r.next == null || r.items.isEmpty() || items.size >= maxItems) done = true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {

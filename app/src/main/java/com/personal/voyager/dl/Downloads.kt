@@ -303,7 +303,7 @@ object Downloads {
                 mime = if (plan.webm) "video/webm" else "video/mp4"
                 out = File(tmp, "$id.out.$ext")
                 withContext(Dispatchers.IO) {
-                    Mux.mergeVideoAudio(files[0].absolutePath, files[1].absolutePath, out.absolutePath, plan.webm, check) { proc(it) }
+                    Bg.low { Mux.mergeVideoAudio(files[0].absolutePath, files[1].absolutePath, out.absolutePath, plan.webm, check) { proc(it) } }
                 }
             }
             is Plan.Direct -> {
@@ -316,7 +316,7 @@ object Downloads {
                 mime = "audio/mp4"
                 out = File(tmp, "$id.out.m4a")
                 withContext(Dispatchers.IO) {
-                    Mux.remuxAudioToM4a(files[0].absolutePath, out.absolutePath, check) { proc(it) }
+                    Bg.low { Mux.remuxAudioToM4a(files[0].absolutePath, out.absolutePath, check) { proc(it) } }
                     Tags.mp4(out, title, artist, album, cover?.tag)
                 }
             }
@@ -326,7 +326,7 @@ object Downloads {
                 out = File(tmp, "$id.out.mp3")
                 val header = Tags.id3(title, artist, album, cover?.tag)
                 withContext(Dispatchers.Default) {
-                    Mp3.encode(files[0].absolutePath, out.absolutePath, plan.kbps, header, check) { proc(it) }
+                    Bg.low { Mp3.encode(files[0].absolutePath, out.absolutePath, plan.kbps, header, check) { proc(it) } }
                 }
             }
         }

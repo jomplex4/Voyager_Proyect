@@ -1,9 +1,13 @@
 package com.personal.voyager.dl
 
+import android.content.ContentUris
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -47,6 +51,52 @@ object Storage {
     fun uriFor(ctx: Context, stored: String): Uri =
         if (stored.startsWith("content://")) Uri.parse(stored)
         else FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", File(stored))
+
+    /**
+     * The permanent MediaStore address of a file in the Voyager folder (the same kind any gallery or music app
+     * uses). Unlike a FileProvider address it needs no temporary permission, so a player can reopen it at any
+     * time, even after the screen that launched it is gone.
+     */
+    fun mediaUri(ctx: Context, path: String): Uri? = runCatching {
+        ctx.contentResolver.query(
+            MediaStore.Files.getContentUri("external"),
+            arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.MEDIA_TYPE),
+            MediaStore.Files.FileColumns.DATA + "=?",
+            arrayOf(path),
+            null,
+        )?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            val id = c.getLong(0)
+            when (c.getInt(1)) {
+                MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO ->
+                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO ->
+                    ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                else -> null
+            }
+        }
+    }.getOrNull()
+
+    /** Calls [onReady] with the best address to hand to another app (scans the file first if needed). */
+    fun resolveUri(ctx: Context, stored: String, mime: String?, onReady: (Uri) -> Unit) {
+        if (stored.startsWith("content://")) {
+            onReady(Uri.parse(stored))
+            return
+        }
+        val known = mediaUri(ctx, stored)
+        if (known != null) {
+            onReady(known)
+            return
+        }
+        val main = Handler(Looper.getMainLooper())
+        try {
+            MediaScannerConnection.scanFile(ctx, arrayOf(stored), arrayOf(mime)) { _, uri ->
+                main.post { onReady(uri ?: mediaUri(ctx, stored) ?: uriFor(ctx, stored)) }
+            }
+        } catch (e: Exception) {
+            onReady(uriFor(ctx, stored))
+        }
+    }
 
     fun exists(ctx: Context, stored: String): Boolean =
         if (stored.startsWith("content://")) Saver.uriExists(ctx, Uri.parse(stored)) else File(stored).exists()

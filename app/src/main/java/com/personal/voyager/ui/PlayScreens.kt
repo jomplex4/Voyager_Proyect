@@ -1,6 +1,7 @@
 package com.personal.voyager.ui
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -58,16 +59,24 @@ import com.personal.voyager.vm.AppViewModel
 import com.personal.voyager.vm.Screen
 import java.io.File
 
+/**
+ * Opens the file in the user's player as ITS OWN task (so leaving the player returns here and it is not stuck
+ * inside this app), using the permanent MediaStore address (so the player can reopen it later without any
+ * temporary permission).
+ */
 private fun openFile(ctx: Context, d: DoneItem) {
-    val uri = Storage.uriFor(ctx, d.uri)
-    val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, d.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    try {
-        ctx.startActivity(view)
-    } catch (e: ActivityNotFoundException) {
+    Storage.resolveUri(ctx, d.uri, d.mime) { uri ->
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, d.mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        view.clipData = ClipData.newRawUri("", uri)
         try {
-            ctx.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e2: Exception) {
-            Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
+            ctx.startActivity(view)
+        } catch (e: ActivityNotFoundException) {
+            try {
+                ctx.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e2: Exception) {
+                Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

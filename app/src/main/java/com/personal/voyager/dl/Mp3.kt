@@ -55,6 +55,7 @@ object Mp3 {
             var shorts = ShortArray(16384)
             var mp3 = ByteArray(32768)
             var tick = 0
+            var lastOut = System.nanoTime()
 
             BufferedOutputStream(FileOutputStream(outPath), 128 * 1024).use { out ->
                 if (header != null) out.write(header)
@@ -83,7 +84,11 @@ object Mp3 {
                             f.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
                         if (encoder == null) encoder = Mp3Encoder(minOf(channels, 2), rate, kbps, quality(kbps))
                     }
+                    if (oi < 0 && inDone && System.nanoTime() - lastOut > 20_000_000_000L) {
+                        throw IOException("The audio decoder stopped responding")
+                    }
                     if (oi >= 0) {
+                        lastOut = System.nanoTime()
                         val enc = encoder ?: throw IOException("Could not decode the audio")
                         val ob = dec.getOutputBuffer(oi) ?: throw IOException("Decoder output unavailable")
                         if (info.size > 0) {

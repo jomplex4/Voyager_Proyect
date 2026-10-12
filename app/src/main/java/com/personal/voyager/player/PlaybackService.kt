@@ -10,7 +10,11 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        session = MediaSession.Builder(this, PlayerHub.get(this)).build()
+        val built = MediaSession.Builder(this, PlayerHub.get(this)).build()
+        session = built
+        // Without a MediaController binding to this service Media3 never registers the session, so no
+        // notification appears. Adding it here makes the standard playback notification show up.
+        addSession(built)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session

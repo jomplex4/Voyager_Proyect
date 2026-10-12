@@ -28,8 +28,8 @@ android {
         applicationId = "com.personal.voyager"
         minSdk = 30
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.2.0"
+        versionCode = 7
+        versionName = "1.2.2"
         resourceConfigurations += listOf("en")
     }
 
