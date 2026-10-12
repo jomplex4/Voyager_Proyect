@@ -1,0 +1,533 @@
+package com.personal.voyager.ui
+
+import android.content.Intent
+import android.view.LayoutInflater
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.ui.PlayerView
+import com.personal.voyager.R
+import com.personal.voyager.core.Item
+import com.personal.voyager.core.Links
+import com.personal.voyager.core.Prefs
+import com.personal.voyager.player.PlaybackService
+import com.personal.voyager.player.PlayerHub
+import com.personal.voyager.vm.AppViewModel
+import com.personal.voyager.vm.Screen
+import com.personal.voyager.yt.ChannelHeader
+import com.personal.voyager.yt.PlaylistHeader
+import com.personal.voyager.yt.YtRepo
+import kotlinx.coroutines.CancellationException
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamType
+
+// ---------------- clipboard card ----------------
+
+@Composable
+fun ClipCard(vm: AppViewModel) {
+    val c = vm.clip ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp)).background(Pal.Card2).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Thumb(c.thumb, Modifier.size(width = 64.dp, height = 48.dp), RoundedCornerShape(8.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Link copied", style = Txt.Row)
+            Text(Links.short(c.url, 28), style = Txt.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(
+            Modifier.clip(RoundedCornerShape(50)).background(Pal.Red).clickable { vm.downloadFromClip() }
+                .padding(horizontal = 18.dp, vertical = 9.dp),
+        ) { Text("Download", style = Txt.Label.copy(color = Pal.White)) }
+        IconTap(R.drawable.ic_close, { vm.dismissClip() }, tint = Pal.Gray, size = 18.dp, box = 36.dp)
+    }
+}
+
+// ---------------- home ----------------
+
+@Composable
+fun HomeScreen(vm: AppViewModel) {
+    Column(Modifier.fillMaxSize()) {
+        ClipCard(vm)
+        Column(
+            Modifier.weight(1f).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            LogoTile(72.dp)
+            Spacer(Modifier.height(18.dp))
+            Text("VOYAGER", style = Txt.Wordmark)
+            Spacer(Modifier.height(40.dp))
+            Row(
+                Modifier.padding(horizontal = 24.dp).fillMaxWidth().height(56.dp)
+                    .clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Pal.Line), RoundedCornerShape(50))
+                    .background(Pal.Card).clickable { vm.push(Screen.Search()) }.padding(start = 18.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Ic(R.drawable.ic_download, tint = Pal.Gray, size = 22.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Search or paste a link", style = Txt.Body.copy(color = Pal.Gray), modifier = Modifier.weight(1f))
+                Box(Modifier.size(42.dp).clip(CircleShape).background(Pal.Red), contentAlignment = Alignment.Center) {
+                    Ic(R.drawable.ic_search, size = 22.dp)
+                }
+            }
+            Spacer(Modifier.height(72.dp))
+        }
+    }
+}
+
+// ---------------- search ----------------
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SearchScreen(vm: AppViewModel, initial: String) {
+    var text by remember { mutableStateOf(initial) }
+    var recents by remember { mutableStateOf(Prefs.recents()) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp)
+                .clip(RoundedCornerShape(16.dp)).background(Pal.Card2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconTap(R.drawable.ic_arrow_back, { vm.pop() })
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                textStyle = Txt.Body,
+                cursorBrush = SolidColor(Pal.Red),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { vm.submit(text) }),
+                modifier = Modifier.weight(1f).focusRequester(focus),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (text.isEmpty()) Text("Search or paste a link", style = Txt.Body.copy(color = Pal.Gray))
+                        inner()
+                    }
+                },
+            )
+            if (text.isNotEmpty()) IconTap(R.drawable.ic_close, { text = "" }, tint = Pal.Gray, size = 20.dp)
+        }
+        ClipCard(vm)
+        if (recents.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Recent searches", style = Txt.Label, modifier = Modifier.weight(1f))
+                IconTap(R.drawable.ic_delete, { Prefs.clearRecents(); recents = emptyList() }, tint = Pal.Gray, size = 20.dp)
+            }
+            FlowRow(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                recents.forEach { r ->
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(Pal.Card2).clickable { vm.submit(r) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) { Text(r, style = Txt.Body.copy(fontSize = 14.sp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        }
+    }
+}
+
+// ---------------- generic item list ----------------
+
+@Composable
+fun ItemRow(vm: AppViewModel, item: Item) {
+    when (item) {
+        is Item.Video -> VideoRow(
+            item,
+            onClick = { vm.push(Screen.Detail(item.url, item.title, item.thumb)) },
+            onDownload = { vm.downloadVideoUrl(item.url) },
+        )
+        is Item.Channel -> ChannelRow(item) { vm.push(Screen.Channel(item.url, item.title)) }
+        is Item.Playlist -> PlaylistRow(item) { vm.push(Screen.Playlist(item.url, item.title)) }
+    }
+}
+
+@Composable
+fun ItemList(
+    vm: AppViewModel,
+    pager: Pager,
+    modifier: Modifier = Modifier,
+    header: (LazyListScope.() -> Unit)? = null,
+) {
+    LaunchedEffect(pager) { pager.ensureStarted() }
+    LazyColumn(modifier.fillMaxSize()) {
+        header?.invoke(this)
+        itemsIndexed(pager.items) { _, item -> ItemRow(vm, item) }
+        item {
+            when {
+                pager.error != null -> CenterMessage(pager.error ?: "", action = "Retry", onAction = { pager.loadMore() })
+                !pager.done -> {
+                    LaunchedEffect(pager.items.size) { pager.loadMore() }
+                    Loading()
+                }
+                pager.items.isEmpty() -> CenterMessage("No results")
+            }
+        }
+    }
+}
+
+// ---------------- results ----------------
+
+@Composable
+fun ResultsScreen(vm: AppViewModel, query: String) {
+    var tab by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val filters = listOf(YtRepo.ALL, YtRepo.CHANNELS, YtRepo.PLAYLISTS)
+    val pagers = remember(query) { filters.map { f -> Pager(scope) { page -> YtRepo.search(query, f, page) } } }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp)
+                .clip(RoundedCornerShape(16.dp)).background(Pal.Card2).clickable { vm.push(Screen.Search(query)) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconTap(R.drawable.ic_arrow_back, { vm.pop() })
+            Text(query, style = Txt.Body, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            IconTap(R.drawable.ic_close, { vm.push(Screen.Search()) }, tint = Pal.Gray, size = 20.dp)
+        }
+        Tabs(listOf("All", "Channels", "Playlists"), tab, { tab = it })
+        Spacer(Modifier.height(4.dp))
+        ItemList(vm, pagers[tab])
+    }
+}
+
+// ---------------- video detail ----------------
+
+@Composable
+private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
+    AndroidView(
+        factory = { c ->
+            val v = LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView
+            v.player = PlayerHub.get(c)
+            v.setFullscreenButtonClickListener { fs -> vm.fullscreen = fs }
+            v
+        },
+        update = { it.setFullscreenButtonState(vm.fullscreen) },
+        onRelease = { it.player = null },
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
+    val ctx = LocalContext.current
+    var info by remember(s.url) { mutableStateOf<StreamInfo?>(null) }
+    var error by remember(s.url) { mutableStateOf<String?>(null) }
+    var previewFailed by remember(s.url) { mutableStateOf(false) }
+    val related = remember(info) { info?.let { YtRepo.related(it) } ?: emptyList() }
+
+    LaunchedEffect(s.url) {
+        try {
+            val i = YtRepo.stream(s.url)
+            info = i
+            if (i.streamType == StreamType.LIVE_STREAM || i.streamType == StreamType.AUDIO_LIVE_STREAM) {
+                previewFailed = true
+                return@LaunchedEffect
+            }
+            val thumb = YtRepo.pickThumb(i.thumbnails) ?: s.thumb
+            if (PlayerHub.load(ctx, i, thumb)) {
+                ctx.startService(Intent(ctx, PlaybackService::class.java))
+            } else previewFailed = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            error = YtRepo.friendly(e)
+        }
+    }
+
+    DisposableEffect(s.url) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                previewFailed = true
+            }
+        }
+        val player = PlayerHub.get(ctx)
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            PlayerHub.stopPlayback()
+            ctx.stopService(Intent(ctx, PlaybackService::class.java))
+            vm.fullscreen = false
+        }
+    }
+
+    // Keep audio playing in the background but stop decoding video while the screen is off.
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val obs = LifecycleEventObserver { _, e ->
+            val p = PlayerHub.peek() ?: return@LifecycleEventObserver
+            if (e == Lifecycle.Event.ON_STOP || e == Lifecycle.Event.ON_START) {
+                val off = e == Lifecycle.Event.ON_STOP
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, off).build()
+            }
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+
+    if (vm.fullscreen) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            PreviewPlayer(vm, Modifier.fillMaxSize())
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
+            PreviewPlayer(vm, Modifier.fillMaxSize())
+            if (previewFailed || error != null) {
+                Text(
+                    if (error != null) "" else "Preview unavailable, you can still download",
+                    style = Txt.Small.copy(color = Pal.White),
+                    modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                )
+            }
+            Box(Modifier.align(Alignment.TopStart).padding(4.dp)) {
+                IconTap(R.drawable.ic_arrow_back, { vm.pop() })
+            }
+        }
+        val i = info
+        LazyColumn(Modifier.fillMaxSize()) {
+            if (i == null && error == null) item { Loading() }
+            if (error != null) item {
+                CenterMessage(error ?: "", action = "Back", onAction = { vm.pop() })
+            }
+            if (i != null) {
+                item {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text(i.name ?: "", style = Txt.Title, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(6.dp))
+                        val chUrl = i.uploaderUrl
+                        Text(
+                            i.uploaderName ?: "",
+                            style = Txt.Label.copy(color = if (chUrl.isNullOrBlank()) Pal.Gray else Pal.White),
+                            modifier = Modifier.clickable(enabled = !chUrl.isNullOrBlank()) {
+                                vm.push(Screen.Channel(chUrl ?: "", i.uploaderName))
+                            },
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        PillButton("Download", { vm.showSheetForInfo(i) }, Modifier.fillMaxWidth())
+                    }
+                }
+                if (related.isNotEmpty()) {
+                    item {
+                        Text("Related videos", style = Txt.Title.copy(fontSize = 16.sp), modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp))
+                    }
+                    itemsIndexed(related) { _, it -> ItemRow(vm, it) }
+                }
+            }
+        }
+    }
+}
+
+// ---------------- channel ----------------
+
+@Composable
+fun ChannelScreen(vm: AppViewModel, s: Screen.Channel) {
+    var header by remember(s.url) { mutableStateOf<ChannelHeader?>(null) }
+    var error by remember(s.url) { mutableStateOf<String?>(null) }
+    var tab by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(s.url) {
+        try {
+            header = YtRepo.channel(s.url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            error = YtRepo.friendly(e)
+        }
+    }
+    val h = header
+    Column(Modifier.fillMaxSize()) {
+        TopBar(h?.name ?: s.name ?: "Channel", { vm.pop() })
+        when {
+            error != null -> CenterMessage(error ?: "")
+            h == null -> Loading()
+            else -> {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Thumb(h.avatar, Modifier.size(64.dp), CircleShape)
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(h.name, style = Txt.Title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (h.subs >= 0) Text("${com.personal.voyager.core.Fmt.compact(h.subs)} subscribers", style = Txt.Small)
+                    }
+                }
+                Tabs(listOf("Videos", "Playlists"), tab, { tab = it })
+                Spacer(Modifier.height(4.dp))
+                val pagers = remember(h) {
+                    listOf(h.videosTab, h.playlistsTab).map { handler ->
+                        handler?.let { hd -> Pager(scope) { page -> YtRepo.channelTab(hd, page) } }
+                    }
+                }
+                val p = pagers[tab]
+                if (p == null) CenterMessage("Nothing here") else ItemList(vm, p)
+            }
+        }
+    }
+}
+
+// ---------------- playlist (courses) ----------------
+
+@Composable
+fun PlaylistScreen(vm: AppViewModel, s: Screen.Playlist) {
+    var header by remember(s.url) { mutableStateOf<PlaylistHeader?>(null) }
+    var error by remember(s.url) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val selected: SnapshotStateList<String> = remember(s.url) { mutableStateListOf() }
+
+    LaunchedEffect(s.url) {
+        try {
+            header = YtRepo.playlist(s.url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            error = YtRepo.friendly(e)
+        }
+    }
+    val h = header
+    Column(Modifier.fillMaxSize()) {
+        TopBar(h?.name ?: s.name ?: "Playlist", { vm.pop() })
+        when {
+            error != null -> CenterMessage(error ?: "")
+            h == null -> Loading()
+            else -> {
+                val pager = remember(h) {
+                    Pager(scope, maxItems = 200) { page -> if (page == null) h.first else YtRepo.playlistMore(s.url, page) }
+                }
+                LaunchedEffect(pager) { pager.ensureStarted() }
+                val videos = pager.items.filterIsInstance<Item.Video>()
+                val allSelected = videos.isNotEmpty() && videos.all { it.url in selected }
+
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        listOfNotNull(h.uploader, if (h.count > 0) "${h.count} videos" else null).joinToString(" · "),
+                        style = Txt.Small, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        Modifier.clip(RoundedCornerShape(50)).clickable {
+                            if (allSelected) selected.clear() else {
+                                selected.clear()
+                                selected.addAll(videos.map { it.url })
+                            }
+                        }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Ic(if (allSelected) R.drawable.ic_check_circle else R.drawable.ic_circle_outline, tint = if (allSelected) Pal.Red else Pal.Gray, size = 22.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Select all", style = Txt.Label.copy(color = Pal.White))
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        itemsIndexed(videos) { _, v ->
+                            val on = v.url in selected
+                            Row(
+                                Modifier.fillMaxWidth().clickable { if (on) selected.remove(v.url) else selected.add(v.url) }
+                                    .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Ic(if (on) R.drawable.ic_check_circle else R.drawable.ic_circle_outline, tint = if (on) Pal.Red else Pal.Gray, size = 24.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Box(Modifier.width(120.dp).height(68.dp)) {
+                                    Thumb(v.thumb, Modifier.fillMaxSize(), RoundedCornerShape(8.dp))
+                                    if (v.durationSec > 0) Badge(com.personal.voyager.core.Fmt.duration(v.durationSec), Modifier.align(Alignment.BottomEnd).padding(3.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(v.title, style = Txt.Row, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            }
+                        }
+                        item {
+                            when {
+                                pager.error != null -> CenterMessage(pager.error ?: "", action = "Retry", onAction = { pager.loadMore() })
+                                !pager.done -> {
+                                    LaunchedEffect(pager.items.size) { pager.loadMore() }
+                                    Loading()
+                                }
+                                videos.isEmpty() -> CenterMessage("This playlist is empty")
+                            }
+                        }
+                    }
+                }
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    PillButton(
+                        if (selected.isEmpty()) "Download" else "Download (${selected.size})",
+                        onClick = {
+                            val order = videos.withIndex().filter { it.value.url in selected }
+                            vm.showPlaylistSheet(order.map { it.value }, order.map { it.index + 1 }, h.name)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selected.isNotEmpty(),
+                    )
+                }
+            }
+        }
+    }
+}

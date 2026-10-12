@@ -1,0 +1,100 @@
+# VOYAGER
+
+Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 17). Sin anuncios, sin cuentas, sin seguimiento. Solo para tu uso personal (no se publica ni se distribuye).
+
+Interfaz de la app en inglés. Este README y mis explicaciones, en español.
+
+## 1. Descomprimir y abrir en VS Code
+
+1. Crea una carpeta nueva, por ejemplo `C:\Proyectos\VOYAGER`.
+2. Extrae aquí el contenido de `VOYAGER-project.zip`. Debes ver directamente las carpetas `app`, `gradle`, `.github` y los archivos `settings.gradle.kts`, `README.md`, etc. (no una carpeta dentro de otra).
+3. Abre VS Code, menú **File > Open Folder** y elige esa carpeta.
+4. Abre la terminal de VS Code: menú **Terminal > New Terminal**.
+
+## 2. Crear el repositorio en GitHub (una sola vez)
+
+1. Entra a github.com e inicia sesión. Arriba a la derecha pulsa **+ > New repository**.
+2. Nombre: `voyager`. Marca **Private** (IMPORTANTE, mira la nota de seguridad abajo). No marques README ni .gitignore. Pulsa **Create repository**.
+3. Copia la dirección que te muestra, algo como `https://github.com/TU_USUARIO/voyager.git`.
+
+## 3. Primer envío (push)
+
+En la terminal de VS Code, uno por uno:
+
+```
+git init
+git add .
+git commit -m "VOYAGER v1.0.0"
+git branch -M main
+git remote add origin https://github.com/TU_USUARIO/voyager.git
+git push -u origin main
+```
+
+(Cambia `TU_USUARIO` por tu usuario real. Si Git te pide iniciar sesión, hazlo en la ventana que se abre.)
+
+Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos la primera vez.
+
+## 4. Descargar el APK
+
+**Opción A (cada push):** en tu repo, pestaña **Actions**, entra al último "Build VOYAGER" con check verde, baja hasta **Artifacts** y descarga `VOYAGER-apk` (es un .zip con el .apk dentro).
+
+**Opción B (versión oficial con tag):**
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
+
+## 5. Instalar en el teléfono
+
+1. Pasa el .apk al teléfono (abre GitHub desde el navegador del teléfono y bájalo, o por cable).
+2. Ábrelo. Si Android lo bloquea, pulsa **Ajustes** y activa "Permitir desde esta fuente" para tu navegador o administrador de archivos.
+3. Instala. Como todas las versiones van firmadas con la misma clave, cada versión nueva se instala encima de la anterior sin perder nada.
+4. La primera vez acepta el permiso de notificaciones (la app funciona igual si lo niegas, pero no verás el progreso en la barra).
+
+## 6. Si el build falla
+
+1. En GitHub, pestaña **Actions**, abre el run con X roja.
+2. Abre el paso **Build release APK** y copia las **últimas 60 líneas** (busca las líneas con `error:` o `Could not resolve`).
+3. Pégamelas aquí en el chat y te doy el arreglo exacto.
+
+Causa más probable: una versión de librería. Todas están en un solo archivo, `gradle/libs.versions.toml`. Las que NO pude comprobar desde mi entorno (AGP, Compose BOM, lifecycle, activity, coil, okhttp, desugar) vienen de mi conocimiento. Las que sí verifiqué en GitHub: NewPipeExtractor v0.26.5, Media3 1.5.1, Kotlin 2.0.21, coroutines 1.9.0.
+
+## 7. Cuando YouTube deje de funcionar
+
+YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
+
+1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
+2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.0.1`, `git push origin v1.0.1`) y reinstala.
+
+## 8. Cambiar el ícono o el splash
+
+- Ícono: reemplaza `app/src/main/res/drawable-nodpi/ic_launcher_foreground.png` (432 x 432 px, logo con fondo transparente, dentro del 66% central). El fondo gris es `ic_launcher_background` en `values/colors.xml`.
+- Splash: el logo es `drawable-nodpi/voyager_logo.png` y el de DIGITALMINDS `dm_logo.png`. Duración mínima: constante `SPLASH_MIN_MS` en `app/src/main/java/com/personal/voyager/ui/AppRoot.kt`.
+
+## 9. Qué hace la app
+
+- **Download:** buscar (Todo, Canales, Listas), pegar un enlace de YouTube o Facebook, tarjeta del portapapeles, detalle con vista previa ligera (360p) y reproducción en segundo plano con la notificación multimedia de Android.
+- **Calidades de video:** todas las que el video realmente tiene, de 360p hasta su máximo y nunca más. Hasta 1080p usa H.264 en MP4. Para 1440p y 2160p usa VP9 en WebM; si tu teléfono no puede mezclarlo, cae solo a H.264 en 1080p o menos.
+- **Audio:** M4A 128K (sin recodificar) y MP3 128K, 160K y 320K (el MP3 320K se recodifica desde el AAC de YouTube, es normal).
+- **Listas (cursos):** marcas videos, eliges un formato una vez y se descargan en orden con prefijo `01 - `. Máximo 200 por lista.
+- **Play:** cola de descargas (máx. 2 a la vez, pausa y reanudación, sobrevive si se cierra la app), lista de descargados con Abrir, Compartir y Eliminar. Los archivos van a `Música/VOYAGER` y `Películas/VOYAGER`.
+- **Facebook:** solo videos públicos, sin iniciar sesión. Si Facebook cambia su página, esa parte (archivo `fb/Facebook.kt`) es la que habría que ajustar.
+
+## 10. Lo que no pude verificar (sé transparente conmigo si algo falla)
+
+- La app no pudo compilarse completa en mi entorno (no tengo acceso a Maven, Google ni JitPack). Sí compilé aparte las partes de Android puro (mezcla de video, MP3, guardado) y probé el codificador MP3 con audio real. Las pantallas (Compose) y la unión con NewPipeExtractor se revisaron leyendo el código fuente real de cada librería, pero no se ejecutaron.
+- El MP3 se codifica con un port de LAME en Java puro (rápido en PC; en tu A03 Core puede tardar cerca de 1x la duración de la canción). Calidad configurable en `dl/Mp3.kt` (constante `QUALITY`).
+- Facebook y el mezclado WebM de 1440p/2160p son lo más frágil.
+- No se recortó ninguna función del prompt original.
+
+## 11. Nota de seguridad
+
+`voyager-release.jks` y `keystore.properties` van incluidos para que no tengas que configurar nada. Eso es aceptable **solo mientras el repositorio sea privado**. Si algún día lo haces público, crea otra clave y bórrala del historial.
+
+## 12. Licencias
+
+NewPipeExtractor es GPL-3.0 y LAME (port Java) es LGPL: por eso la app es solo para uso personal y no debe distribuirse. Space Grotesk usa licencia OFL. Los textos están en `licenses/`.
