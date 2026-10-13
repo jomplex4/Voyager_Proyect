@@ -364,20 +364,8 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
         }
     }
 
-    // Keep audio playing in the background but stop decoding video while the screen is off.
-    val owner = LocalLifecycleOwner.current
-    DisposableEffect(owner) {
-        val obs = LifecycleEventObserver { _, e ->
-            val p = PlayerHub.peek() ?: return@LifecycleEventObserver
-            if (e == Lifecycle.Event.ON_STOP || e == Lifecycle.Event.ON_START) {
-                val off = e == Lifecycle.Event.ON_STOP
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, off).build()
-            }
-        }
-        owner.lifecycle.addObserver(obs)
-        onDispose { owner.lifecycle.removeObserver(obs) }
-    }
+    // The player is never reconfigured when the app goes to the background or comes back: touching the video
+    // track made ExoPlayer drop its buffer and start loading again.
 
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {

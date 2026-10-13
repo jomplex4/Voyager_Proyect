@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.4 (final)
+
+- La vista previa de YouTube ya no reinicia la carga al salir de la app y volver: antes, al volver, la app reconfiguraba el reproductor y este descartaba lo ya cargado.
+
 ## Versión 1.2.2: abrir archivos en tu reproductor
 
 - Al tocar un archivo descargado, VOYAGER lo abre en tu reproductor como una app aparte (su propia ventana en recientes), no dentro de VOYAGER.
@@ -78,8 +82,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v1.2.2
-git push origin v1.2.2
+git tag v2.4
+git push origin v2.4
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -105,7 +109,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.2.2`, `git push origin v1.2.2`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.4`, `git push origin v2.4`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 
