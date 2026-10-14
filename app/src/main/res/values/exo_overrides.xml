@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Smaller, quieter player controls (same layout Media3 ships, only measures and colors change). -->
-    <dimen name="exo_icon_size">48dp</dimen>
-    <dimen name="exo_icon_horizontal_margin">12dp</dimen>
-    <dimen name="exo_icon_padding">7.2dp</dimen>
-    <dimen name="exo_small_icon_width">43.2dp</dimen>
-    <dimen name="exo_small_icon_height">43.2dp</dimen>
+    <dimen name="exo_icon_size">67.2dp</dimen>
+    <dimen name="exo_icon_horizontal_margin">16.8dp</dimen>
+    <dimen name="exo_icon_padding">10.08dp</dimen>
+    <dimen name="exo_small_icon_width">60.48dp</dimen>
+    <dimen name="exo_small_icon_height">60.48dp</dimen>
     <dimen name="exo_small_icon_horizontal_margin">0dp</dimen>
-    <dimen name="exo_small_icon_padding_horizontal">10.8dp</dimen>
-    <dimen name="exo_small_icon_padding_vertical">10.8dp</dimen>
-    <dimen name="exo_styled_bottom_bar_height">43.2dp</dimen>
+    <dimen name="exo_small_icon_padding_horizontal">15.12dp</dimen>
+    <dimen name="exo_small_icon_padding_vertical">15.12dp</dimen>
+    <dimen name="exo_styled_bottom_bar_height">60.48dp</dimen>
     <dimen name="exo_styled_bottom_bar_margin_top">0dp</dimen>
     <dimen name="exo_styled_bottom_bar_time_padding">8dp</dimen>
-    <dimen name="exo_styled_progress_layout_height">33.6dp</dimen>
-    <dimen name="exo_styled_progress_touch_target_height">43.2dp</dimen>
-    <dimen name="exo_styled_progress_margin_bottom">36dp</dimen>
+    <dimen name="exo_styled_progress_layout_height">47.04dp</dimen>
+    <dimen name="exo_styled_progress_touch_target_height">60.48dp</dimen>
+    <dimen name="exo_styled_progress_margin_bottom">50.4dp</dimen>
     <dimen name="exo_styled_progress_bar_height">2dp</dimen>
     <dimen name="exo_styled_progress_enabled_thumb_size">8dp</dimen>
     <dimen name="exo_styled_progress_dragged_thumb_size">12dp</dimen>

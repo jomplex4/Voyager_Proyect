@@ -313,6 +313,7 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
 @Composable
 fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     val ctx = LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
     val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { }
@@ -353,11 +354,17 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
             override fun onPlayerError(error: PlaybackException) {
                 previewFailed = true
             }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                view.keepScreenOn = playWhenReady
+            }
         }
+        view.keepScreenOn = true
         val player = PlayerHub.get(ctx)
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
+            view.keepScreenOn = false
             PlayerHub.stopPlayback()
             ctx.stopService(Intent(ctx, PlaybackService::class.java))
             vm.fullscreen = false

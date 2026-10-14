@@ -19,6 +19,9 @@ import com.personal.voyager.yt.AudioKind
 import com.personal.voyager.yt.Formats
 import com.personal.voyager.yt.YtRepo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.personal.voyager.fb.Photo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -232,6 +235,13 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (YtRepo.linkType(c.url) == StreamingService.LinkType.STREAM) downloadVideoUrl(c.url, true)
             else openUrl(c.url)
+        }
+    }
+
+    fun savePhoto(src: String) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { Photo.save(app, src) }
+            say(if (ok) "Photo saved in the Voyager folder" else "Could not save the photo")
         }
     }
 
