@@ -310,6 +310,33 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
     )
 }
 
+private fun saveResume(i: StreamInfo, posMs: Long) {
+    if (i.duration <= 600) return
+    val id = i.id ?: return
+    if (posMs >= i.duration * 1000 - 20_000) Prefs.resumeClear(id)
+    else if (posMs > 5_000) Prefs.resumeSet(id, posMs)
+}
+
+@Composable
+private fun QualityChip(heights: List<Int>, current: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier.clip(RoundedCornerShape(50)).background(Color(0x99000000)).clickable { open = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { Text("${current}p", style = Txt.Label.copy(color = Pal.White)) }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            heights.forEach { h ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("${h}p", style = Txt.Body.copy(color = if (h == current) Pal.RedBright else Pal.White)) },
+                    onClick = { open = false; onPick(h) },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     val ctx = LocalContext.current
@@ -328,6 +355,9 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     var info by remember(s.url) { mutableStateOf<StreamInfo?>(null) }
     var error by remember(s.url) { mutableStateOf<String?>(null) }
     var previewFailed by remember(s.url) { mutableStateOf(false) }
+    var quality by remember(s.url) { mutableStateOf(0) }
+    var thumbUrl by remember(s.url) { mutableStateOf<String?>(null) }
+    val heights = remember(info) { info?.let { com.personal.voyager.yt.Formats.availableHeights(it) } ?: emptyList() }
     val related = remember(info) { info?.let { YtRepo.related(it) } ?: emptyList() }
 
     LaunchedEffect(s.url) {
@@ -339,7 +369,13 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
                 return@LaunchedEffect
             }
             val thumb = YtRepo.pickThumb(i.thumbnails) ?: s.thumb
-            if (PlayerHub.load(ctx, i, thumb)) {
+            thumbUrl = thumb
+            // Videos over 10 minutes continue from where they were left.
+            val saved = if (i.duration > 600) Prefs.resumeGet(i.id ?: "") else 0L
+            val used = PlayerHub.load(ctx, i, thumb, PlayerHub.defaultHeight(i), saved)
+            if (used > 0) {
+                quality = used
+                if (saved > 0) vm.say("Continuing from " + com.personal.voyager.core.Fmt.duration(saved / 1000))
                 ctx.startService(Intent(ctx, PlaybackService::class.java))
             } else previewFailed = true
         } catch (e: CancellationException) {
@@ -347,6 +383,23 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
         } catch (e: Throwable) {
             error = YtRepo.friendly(e)
         }
+    }
+
+    // Save the position every few seconds (also while the app is in the background).
+    LaunchedEffect(info) {
+        val i = info ?: return@LaunchedEffect
+        if (i.duration <= 600) return@LaunchedEffect
+        while (true) {
+            delay(5000)
+            PlayerHub.peek()?.let { saveResume(i, it.currentPosition) }
+        }
+    }
+
+    fun pick(h: Int) {
+        val i = info ?: return
+        val pos = PlayerHub.get(ctx).currentPosition
+        val used = PlayerHub.load(ctx, i, thumbUrl, h, pos)
+        if (used > 0) quality = used else vm.say("That quality is not available")
     }
 
     DisposableEffect(s.url) {
@@ -358,11 +411,16 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 view.keepScreenOn = playWhenReady
             }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) info?.id?.let { Prefs.resumeClear(it) }
+            }
         }
         view.keepScreenOn = true
         val player = PlayerHub.get(ctx)
         player.addListener(listener)
         onDispose {
+            info?.let { saveResume(it, player.currentPosition) }
             player.removeListener(listener)
             view.keepScreenOn = false
             PlayerHub.stopPlayback()
@@ -377,6 +435,9 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             PreviewPlayer(vm, Modifier.fillMaxSize())
+            if (heights.isNotEmpty() && quality > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) { QualityChip(heights, quality) { pick(it) } }
+            }
         }
         return
     }
@@ -393,6 +454,9 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
             }
             Box(Modifier.align(Alignment.TopStart).padding(4.dp)) {
                 IconTap(R.drawable.ic_arrow_back, { vm.pop() })
+            }
+            if (heights.isNotEmpty() && quality > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(10.dp)) { QualityChip(heights, quality) { pick(it) } }
             }
         }
         val i = info

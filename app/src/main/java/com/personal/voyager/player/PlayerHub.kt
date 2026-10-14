@@ -93,33 +93,32 @@ object PlayerHub {
     private fun progressive(s: org.schabi.newpipe.extractor.stream.Stream) =
         s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && s.isUrl
 
-    /** Loads a light preview (360p preferred, never above 480p). Returns false when nothing playable exists. */
-    fun load(ctx: Context, info: StreamInfo, thumb: String?): Boolean {
+    /** Default preview quality: 360p if the video has it, otherwise the closest one up to 480p. */
+    fun defaultHeight(info: StreamInfo): Int {
+        val hs = Formats.availableHeights(info)
+        return hs.firstOrNull { it == 360 } ?: hs.filter { it <= 480 }.maxOrNull() ?: hs.minOrNull() ?: 360
+    }
+
+    /** Plays [height] (or the closest available one) from [startMs]. Returns the quality really used, or -1. */
+    fun load(ctx: Context, info: StreamInfo, thumb: String?, height: Int, startMs: Long): Int {
         val p = get(ctx)
+        val sel = Formats.selectVideo(info, height, allowWebm = true) ?: return -1
         val meta = MediaMetadata.Builder()
             .setTitle(info.name)
             .setArtist(info.uploaderName)
             .apply { thumb?.let { setArtworkUri(Uri.parse(it)) } }
             .build()
 
-        val muxed = info.videoStreams
-            .filter { progressive(it) && Formats.labelHeight(it) in 100..480 }
-            .minByOrNull { abs(Formats.labelHeight(it) - 360) }
-
         val source: MediaSource
-        if (muxed != null) {
-            val f = factory(muxed.content)
-            source = ProgressiveMediaSource.Factory(f).createMediaSource(
-                MediaItem.Builder().setUri(muxed.content).setMediaMetadata(meta).build()
+        val m = sel.muxed
+        if (m != null) {
+            source = ProgressiveMediaSource.Factory(factory(m.content)).createMediaSource(
+                MediaItem.Builder().setUri(m.content).setMediaMetadata(meta).build()
             )
         } else {
-            val v = info.videoOnlyStreams
-                .filter { progressive(it) && Formats.labelHeight(it) in 100..480 }
-                .sortedWith(compareBy({ if (it.format == MediaFormat.MPEG_4) 0 else 1 }, { abs(Formats.labelHeight(it) - 360) }))
-                .firstOrNull() ?: return false
-            val a = Formats.pickM4a(info) ?: Formats.pickOpus(info) ?: return false
-            val f = factory(v.content)
-            val vs = ProgressiveMediaSource.Factory(f).createMediaSource(
+            val v = sel.video ?: return -1
+            val a = sel.audio ?: return -1
+            val vs = ProgressiveMediaSource.Factory(factory(v.content)).createMediaSource(
                 MediaItem.Builder().setUri(v.content).setMediaMetadata(meta).build()
             )
             val asrc = ProgressiveMediaSource.Factory(factory(a.content)).createMediaSource(
@@ -127,9 +126,9 @@ object PlayerHub {
             )
             source = MergingMediaSource(vs, asrc)
         }
-        p.setMediaSource(source)
+        if (startMs > 0) p.setMediaSource(source, startMs) else p.setMediaSource(source)
         p.prepare()
         p.playWhenReady = true
-        return true
+        return sel.height
     }
 }

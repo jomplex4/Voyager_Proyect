@@ -66,6 +66,31 @@ object Prefs {
         sp.edit().putString("clips_dismissed", JSONArray(list).toString()).apply()
     }
 
+    /** Where a long video (over 10 minutes) was left, so it can continue from there. */
+    fun resumeGet(id: String): Long = runCatching {
+        JSONObject(sp.getString("resume", "{}") ?: "{}").optLong(id, 0L)
+    }.getOrDefault(0L)
+
+    fun resumeSet(id: String, posMs: Long) {
+        runCatching {
+            val o = JSONObject(sp.getString("resume", "{}") ?: "{}")
+            o.remove(id)
+            o.put(id, posMs)
+            while (o.length() > 60) o.remove(o.keys().next())
+            sp.edit().putString("resume", o.toString()).apply()
+        }
+    }
+
+    fun resumeClear(id: String) {
+        runCatching {
+            val o = JSONObject(sp.getString("resume", "{}") ?: "{}")
+            if (o.has(id)) {
+                o.remove(id)
+                sp.edit().putString("resume", o.toString()).apply()
+            }
+        }
+    }
+
     /** True once the notification permission dialog was shown (only needed on Android 13+). */
     var askedNotifications: Boolean
         get() = sp.getBoolean("asked_notif", false)
