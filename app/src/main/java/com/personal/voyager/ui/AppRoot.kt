@@ -134,6 +134,12 @@ private fun AppRoot(vm: AppViewModel) {
         val a = activity ?: return@LaunchedEffect
         a.requestedOrientation =
             if (fs) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Fullscreen also covers the camera notch area (it stays black otherwise).
+        val lp = a.window.attributes
+        lp.layoutInDisplayCutoutMode =
+            if (fs) android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        a.window.attributes = lp
         val c = WindowCompat.getInsetsController(a.window, a.window.decorView)
         if (fs) {
             c.hide(WindowInsetsCompat.Type.systemBars())

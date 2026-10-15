@@ -50,6 +50,8 @@ object PlayerHub {
                         .build(),
                     true,
                 )
+                .setSeekBackIncrementMs(10_000)
+                .setSeekForwardIncrementMs(10_000)
                 .setHandleAudioBecomingNoisy(true)
                 .build()
             player = p

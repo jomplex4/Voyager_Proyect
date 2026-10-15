@@ -296,7 +296,7 @@ fun ResultsScreen(vm: AppViewModel, query: String) {
 // ---------------- video detail ----------------
 
 @Composable
-private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
+private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier, zoom: Boolean = false) {
     AndroidView(
         factory = { c ->
             val v = LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView
@@ -304,7 +304,11 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
             v.setFullscreenButtonClickListener { fs -> vm.fullscreen = fs }
             v
         },
-        update = { it.setFullscreenButtonState(vm.fullscreen) },
+        update = {
+            it.setFullscreenButtonState(vm.fullscreen)
+            // Fullscreen fills the whole screen (the video is zoomed to cover it instead of showing black bars).
+            it.resizeMode = if (zoom) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        },
         onRelease = { it.player = null },
         modifier = modifier,
     )
@@ -313,7 +317,9 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
 private fun saveResume(i: StreamInfo, posMs: Long) {
     if (i.duration <= 600) return
     val id = i.id ?: return
-    if (posMs >= i.duration * 1000 - 20_000) Prefs.resumeClear(id)
+    val st = PlayerHub.peek()?.playbackState
+    // Finished (ended, or in the last seconds): the saved point is deleted. A partial watch keeps it.
+    if (st == Player.STATE_ENDED || posMs >= i.duration * 1000 - 10_000) Prefs.resumeClear(id)
     else if (posMs > 5_000) Prefs.resumeSet(id, posMs)
 }
 
@@ -434,7 +440,7 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
 
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            PreviewPlayer(vm, Modifier.fillMaxSize())
+            PreviewPlayer(vm, Modifier.fillMaxSize(), zoom = true)
             if (heights.isNotEmpty() && quality > 0) {
                 Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) { QualityChip(heights, quality) { pick(it) } }
             }

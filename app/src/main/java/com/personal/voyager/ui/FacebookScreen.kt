@@ -7,6 +7,9 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceResponse
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -40,6 +43,7 @@ import com.personal.voyager.vm.AppViewModel
 private const val HOME = "https://m.facebook.com/"
 private const val LOGIN = "https://m.facebook.com/login/"
 private const val LOGIN_LITE = "https://mbasic.facebook.com/login/"
+private const val HOME_LITE = "https://mbasic.facebook.com/"
 
 /** Adds a red download button to every video, reel and photo of the normal Facebook mobile site. */
 private val INJECT = """
@@ -113,6 +117,7 @@ private class Bridge(private val vm: AppViewModel) {
 fun FacebookScreen(vm: AppViewModel) {
     var loggedIn by remember { mutableStateOf(FbSession.loggedIn()) }
     var web by remember { mutableStateOf<WebView?>(null) }
+    var status by remember { mutableStateOf("Loading…") }
 
     BackHandler {
         val w = web
@@ -127,13 +132,16 @@ fun FacebookScreen(vm: AppViewModel) {
                         .clickable {
                             FbSession.logout()
                             loggedIn = false
-                            web?.loadUrl(LOGIN)
+                            web?.loadUrl(LOGIN_LITE)
                             vm.say("Logged out of Facebook")
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                 ) { Text("Log out", style = Txt.Label.copy(color = Pal.White)) }
                 Spacer(Modifier.width(8.dp))
             }
+        }
+        if (status.isNotEmpty()) {
+            Text(status, style = Txt.Small.copy(color = Pal.Gray), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
         AndroidView(
             factory = { c ->
@@ -156,10 +164,33 @@ fun FacebookScreen(vm: AppViewModel) {
                     addJavascriptInterface(Bridge(vm), "Voyager")
                     webChromeClient = WebChromeClient()
                     var usedLite = false
+                    var usedLiteHome = false
                     fun liteLogin() {
                         if (!usedLite) {
                             usedLite = true
+                            status = "Switching to the simple login page…"
                             loadUrl(LOGIN_LITE)
+                        }
+                    }
+                    // A page that stays empty (old WebView that cannot run Facebook's scripts): use the plain HTML site.
+                    fun blankCheck() {
+                        postDelayed({
+                            evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { len ->
+                                if ((len?.toIntOrNull() ?: 0) < 40) {
+                                    if (FbSession.loggedIn()) {
+                                        if (!usedLiteHome) {
+                                            usedLiteHome = true
+                                            status = "Using the simple Facebook page"
+                                            loadUrl(HOME_LITE)
+                                        }
+                                    } else liteLogin()
+                                }
+                            }
+                        }, 12000)
+                    }
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            if (status.startsWith("Loading") || status.isEmpty()) status = if (newProgress < 100) "Loading $newProgress%" else ""
                         }
                     }
                     webViewClient = object : WebViewClient() {
@@ -173,7 +204,19 @@ fun FacebookScreen(vm: AppViewModel) {
                         }
 
                         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                            if (request?.isForMainFrame == true) liteLogin()
+                            if (request?.isForMainFrame == true) {
+                                status = "Could not load: " + (error?.description ?: "error")
+                                liteLogin()
+                            }
+                        }
+
+                        override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                            if (request?.isForMainFrame == true) status = "Facebook answered with error " + (errorResponse?.statusCode ?: 0)
+                        }
+
+                        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                            handler?.cancel()
+                            status = "Secure connection failed. Check the phone's date and time."
                         }
 
                         private fun checkLogin(view: WebView?) {
@@ -181,19 +224,17 @@ fun FacebookScreen(vm: AppViewModel) {
                                 cm.flush()
                                 if (!loggedIn) {
                                     loggedIn = true
-                                    // Logged in through the light page: continue in the normal site.
-                                    if (view?.url?.contains("mbasic") == true) view?.loadUrl(HOME)
+                                    // Logged in through the plain page: continue in the full site.
+                                    if (view?.url?.contains("mbasic") == true) {
+                                        view.loadUrl(HOME)
+                                        blankCheck()
+                                    }
                                 }
                             }
                         }
                     }
-                    loadUrl(if (FbSession.loggedIn()) HOME else LOGIN)
-                    // Still blank after a while (old WebView): use the light login page instead.
-                    postDelayed({
-                        evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { len ->
-                            if ((len?.toIntOrNull() ?: 0) < 40 && !FbSession.loggedIn()) liteLogin()
-                        }
-                    }, 12000)
+                    loadUrl(if (FbSession.loggedIn()) HOME else LOGIN_LITE)
+                    blankCheck()
                 }
             },
             onRelease = {

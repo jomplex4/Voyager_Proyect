@@ -4,6 +4,13 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.7
+
+- **Facebook:** el acceso empieza en la página simple (HTML sin scripts modernos), que funciona en cualquier WebView, y después pasa a la versión completa. Una línea de estado bajo el título muestra "Loading %", o el motivo exacto si algo falla.
+- **Pantalla completa:** el video se amplía para llenar toda la pantalla (recorta lo que sobra, sin franjas negras) y también cubre la zona de la cámara frontal.
+- **Reproductor:** botones 15% más pequeños; en lugar de anterior/siguiente hay retroceder y adelantar 10 segundos.
+- **Continuar:** el punto guardado se borra solo cuando terminas el video (o llegas a sus últimos 10 segundos); mientras lo ves por partes se conserva.
+
 ## Versión 2.6
 
 - **Calidad de la vista previa de YouTube:** botón arriba a la derecha del video (por ejemplo "360p") para elegir cualquier calidad disponible; cambia sin perder el punto donde vas.
@@ -94,8 +101,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.6
-git push origin v2.6
+git tag v2.7
+git push origin v2.7
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -121,7 +128,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.6`, `git push origin v2.6`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.7`, `git push origin v2.7`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 
