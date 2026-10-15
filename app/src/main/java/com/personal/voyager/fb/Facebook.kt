@@ -24,7 +24,56 @@ object Facebook {
         val hdUrl: String?,
         val sdUrl: String?,
         val durationSec: Long,
+        val dashVideos: List<Rep> = emptyList(),
+        val dashAudio: Rep? = null,
     )
+
+    /** One stream of Facebook's DASH manifest (separate video or audio file). */
+    class Rep(val width: Int, val height: Int, val bandwidth: Long, val url: String, val codecs: String)
+
+    private val STANDARD = intArrayOf(144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
+
+    /** Quality label like YouTube shows it (a 1920x804 wide video is 1080p). */
+    private fun label(w: Int, h: Int): Int {
+        val eff = if (w <= 0) h else if (w >= h) maxOf(h, Math.round(w * 9f / 16f)) else w
+        val best = STANDARD.minByOrNull { Math.abs(it - eff) } ?: eff
+        return if (Math.abs(best - eff) <= best * 0.08) best else eff
+    }
+
+    /** Best H.264 stream for every quality, ascending: (label, stream). */
+    fun bestReps(info: Info): List<Pair<Int, Rep>> =
+        info.dashVideos.groupBy { label(it.width, it.height) }.mapNotNull { (h, list) ->
+            val pick = list.filter { it.codecs.startsWith("avc1") }.maxByOrNull { it.bandwidth } ?: return@mapNotNull null
+            h to pick
+        }.sortedBy { it.first }
+
+    private fun parseDash(html: String): Triple<List<Rep>, Rep?, Long> {
+        val m = Regex("\"dash_manifest\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(html)
+            ?: return Triple(emptyList(), null, 0L)
+        val xml = unescape(m.groupValues[1]).replace("\\\"", "\"").replace("\\n", "\n")
+        val videos = ArrayList<Rep>()
+        var audio: Rep? = null
+        val attr = Regex("(\\w+)=\"([^\"]*)\"")
+        for (r in Regex("<Representation\\b([^>]*)>(.*?)</Representation>", RegexOption.DOT_MATCHES_ALL).findAll(xml)) {
+            val a = attr.findAll(r.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
+            val url = Regex("<BaseURL>(.*?)</BaseURL>", RegexOption.DOT_MATCHES_ALL).find(r.groupValues[2])
+                ?.groupValues?.get(1)?.trim()?.replace("&amp;", "&") ?: continue
+            if (!url.startsWith("http")) continue
+            val bw = a["bandwidth"]?.toLongOrNull() ?: 0L
+            val codecs = a["codecs"] ?: ""
+            val h = a["height"]?.toIntOrNull()
+            if (h != null) {
+                videos.add(Rep(a["width"]?.toIntOrNull() ?: 0, h, bw, url, codecs))
+            } else if (audio == null || bw > audio.bandwidth) {
+                audio = Rep(0, 0, bw, url, codecs)
+            }
+        }
+        val d = Regex("mediaPresentationDuration=\"PT(?:(\\d+)H)?(?:(\\d+)M)?(?:([\\d.]+)S)?\"").find(xml)
+        val secs = if (d == null) 0L else
+            (d.groupValues[1].toLongOrNull() ?: 0L) * 3600 + (d.groupValues[2].toLongOrNull() ?: 0L) * 60 +
+                (d.groupValues[3].toDoubleOrNull()?.toLong() ?: 0L)
+        return Triple(videos, audio, secs)
+    }
 
     class FbException(msg: String, val loginNeeded: Boolean = false) : Exception(msg)
 
@@ -85,13 +134,14 @@ object Facebook {
         val (html, finalUrl) = load(url, ua) ?: return null
         val hd = hdKeys.firstNotNullOfOrNull { find(html, it) }
         val sd = sdKeys.firstNotNullOfOrNull { find(html, it) }
-        if (hd == null && sd == null) return null
-        val title = meta(html, "og:title")?.takeIf { it.isNotBlank() && !it.equals("Facebook", true) }
+        val (dashV, dashA, dashSecs) = parseDash(html)
+        if (hd == null && sd == null && dashV.isEmpty()) return null
+        val title = meta(html, "og:title")?.replace(Regex("^[\\d.,]+[KMB]? views\\s*·\\s*[\\d.,]+[KMB]? reactions\\s*\\|\\s*"), "")?.takeIf { it.isNotBlank() && !it.equals("Facebook", true) }
             ?: "Facebook ${idOf(finalUrl) ?: idOf(url) ?: "video"}"
         val thumb = meta(html, "og:image")?.takeIf { it.startsWith("http") }
         val dur = Regex("\"playable_duration_in_ms\"\\s*:\\s*(\\d+)").find(html)
             ?.groupValues?.get(1)?.toLongOrNull()?.div(1000) ?: 0L
-        return Info(finalUrl, title, thumb, hd, sd, dur)
+        return Info(finalUrl, title, thumb, hd, sd, if (dur > 0) dur else dashSecs, dashV, dashA)
     }
 
     /** Last resort for logged in accounts: the plain mobile site links the video file directly. */

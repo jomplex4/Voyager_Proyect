@@ -68,7 +68,18 @@ object Resolver {
             val s = mk(url, Facebook.probeSize(url))
             return if (kind.mp3) Plan.Mp3(s, kind.kbps, kind.tag) else Plan.M4a(s, kind.tag)
         }
+        if (choice.startsWith("F:D")) {
+            val h = choice.removePrefix("F:D").toIntOrNull() ?: 0
+            val reps = Facebook.bestReps(info)
+            val pick = reps.filter { it.first <= h }.maxByOrNull { it.first } ?: reps.minByOrNull { it.first }
+            val a = info.dashAudio
+            if (pick != null && a != null) {
+                val v = pick.second
+                return Plan.Merge(mk(v.url, Facebook.probeSize(v.url)), mk(a.url, Facebook.probeSize(a.url)), false, "${pick.first}P")
+            }
+        }
         val wantHd = choice == "F:HD"
+
         val url = (if (wantHd) info.hdUrl ?: info.sdUrl else info.sdUrl ?: info.hdUrl)
             ?: throw Facebook.FbException(Facebook.NOT_AVAILABLE)
         val tag = if (url == info.hdUrl) "HD" else "SD"

@@ -380,8 +380,18 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                     )
                 }
                 val video = ArrayList<SheetRow>()
-                if (info.sdUrl != null) video.add(SheetRow("F:SD", "SD", null, Fmt.size(sdSize), false))
-                if (info.hdUrl != null) video.add(SheetRow("F:HD", "HD", null, Fmt.size(hdSize), false))
+                val reps = Facebook.bestReps(info)
+                val dashAudio = info.dashAudio
+                if (reps.isNotEmpty() && dashAudio != null) {
+                    // Facebook's own "HD" file is capped at 720p; the real qualities come from its DASH streams.
+                    for ((h, r) in reps) {
+                        val bytes = (r.bandwidth + dashAudio.bandwidth) / 8 * info.durationSec
+                        video.add(SheetRow("F:D$h", "${h}p", null, if (bytes > 0) "≈ " + Fmt.size(bytes) else "", false))
+                    }
+                } else {
+                    if (info.sdUrl != null) video.add(SheetRow("F:SD", "SD", null, Fmt.size(sdSize), false))
+                    if (info.hdUrl != null) video.add(SheetRow("F:HD", "HD", null, Fmt.size(hdSize), false))
+                }
                 sheet = SheetUi.Ready(
                     SheetData(
                         title = info.title, thumb = info.thumb, domain = "facebook.com",
