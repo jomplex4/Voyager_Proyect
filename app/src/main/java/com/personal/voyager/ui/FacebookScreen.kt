@@ -2,7 +2,9 @@ package com.personal.voyager.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
@@ -37,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.personal.voyager.core.Net
 import com.personal.voyager.fb.FbSession
 import com.personal.voyager.vm.AppViewModel
 
@@ -118,6 +121,8 @@ fun FacebookScreen(vm: AppViewModel) {
     var loggedIn by remember { mutableStateOf(FbSession.loggedIn()) }
     var web by remember { mutableStateOf<WebView?>(null) }
     var status by remember { mutableStateOf("Loading…") }
+    var failed by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     BackHandler {
         val w = web
@@ -143,6 +148,22 @@ fun FacebookScreen(vm: AppViewModel) {
         if (status.isNotEmpty()) {
             Text(status, style = Txt.Small.copy(color = Pal.Gray), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
+        if (failed) {
+            PillButton("Update WebView in Play Store", {
+                val ui = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    ctx.startActivity(ui)
+                } catch (e: Exception) {
+                    runCatching {
+                        ctx.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.webview"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            }, Modifier.padding(16.dp).fillMaxWidth())
+        }
         AndroidView(
             factory = { c ->
                 val cm = CookieManager.getInstance()
@@ -163,34 +184,56 @@ fun FacebookScreen(vm: AppViewModel) {
                         "Mozilla/5.0 (Linux; Android 11; SM-A032F) AppleWebKit/537.36 (KHTML, like Gecko) $chrome Mobile Safari/537.36"
                     addJavascriptInterface(Bridge(vm), "Voyager")
                     webChromeClient = WebChromeClient()
-                    var usedLite = false
+                    val mobileUa = settings.userAgentString
+                    val wvVersion = runCatching { WebView.getCurrentWebViewPackage()?.versionName }.getOrNull() ?: "unknown"
+                    // Different pages and identities, tried in order, because the phone's WebView may not be able to
+                    // draw one of them (the page loads to about 80% and stays white).
+                    val attempts = listOf(
+                        LOGIN_LITE to mobileUa,
+                        "https://free.facebook.com/login.php" to mobileUa,
+                        "https://touch.facebook.com/login.php" to mobileUa,
+                        "https://www.facebook.com/login/" to Net.UA_CHROME,
+                    )
+                    var attempt = 0
                     var usedLiteHome = false
-                    fun liteLogin() {
-                        if (!usedLite) {
-                            usedLite = true
-                            status = "Switching to the simple login page…"
-                            loadUrl(LOGIN_LITE)
+                    status = "Loading… (WebView $wvVersion)"
+
+                    var blankRef: (Int) -> Unit = {}
+                    fun blankCheckLater(my: Int) {
+                        postDelayed({ blankRef(my) }, 10000)
+                    }
+
+                    fun nextAttempt(reason: String) {
+                        attempt++
+                        if (attempt < attempts.size) {
+                            settings.userAgentString = attempts[attempt].second
+                            status = "$reason Trying another page (${attempt + 1}/${attempts.size})…"
+                            loadUrl(attempts[attempt].first)
+                            blankCheckLater(attempt)
+                        } else {
+                            failed = true
+                            status = "Facebook cannot be drawn by this phone's WebView (version $wvVersion). Update it and try again."
                         }
                     }
-                    // A page that stays empty (old WebView that cannot run Facebook's scripts): use the plain HTML site.
-                    fun blankCheck() {
-                        postDelayed({
-                            evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { len ->
-                                if ((len?.toIntOrNull() ?: 0) < 40) {
-                                    if (FbSession.loggedIn()) {
-                                        if (!usedLiteHome) {
-                                            usedLiteHome = true
-                                            status = "Using the simple Facebook page"
-                                            loadUrl(HOME_LITE)
-                                        }
-                                    } else liteLogin()
-                                }
+                    fun blankCheck(my: Int) {
+                        evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { len ->
+                            if (my == attempt && (len?.toIntOrNull() ?: 0) < 40) {
+                                if (FbSession.loggedIn()) {
+                                    if (!usedLiteHome) {
+                                        usedLiteHome = true
+                                        status = "Using the simple Facebook page"
+                                        loadUrl(HOME_LITE)
+                                    }
+                                } else nextAttempt("Blank page.")
                             }
-                        }, 12000)
+                        }
                     }
+                    blankRef = { blankCheck(it) }
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            if (status.startsWith("Loading") || status.isEmpty()) status = if (newProgress < 100) "Loading $newProgress%" else ""
+                            if (!failed && (status.startsWith("Loading") || status.isEmpty())) {
+                                status = if (newProgress < 100) "Loading $newProgress% (WebView $wvVersion)" else ""
+                            }
                         }
                     }
                     webViewClient = object : WebViewClient() {
@@ -204,10 +247,7 @@ fun FacebookScreen(vm: AppViewModel) {
                         }
 
                         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                            if (request?.isForMainFrame == true) {
-                                status = "Could not load: " + (error?.description ?: "error")
-                                liteLogin()
-                            }
+                            if (request?.isForMainFrame == true) nextAttempt("Could not load (" + (error?.description ?: "error") + ").")
                         }
 
                         override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
@@ -224,17 +264,17 @@ fun FacebookScreen(vm: AppViewModel) {
                                 cm.flush()
                                 if (!loggedIn) {
                                     loggedIn = true
-                                    // Logged in through the plain page: continue in the full site.
-                                    if (view?.url?.contains("mbasic") == true) {
-                                        view.loadUrl(HOME)
-                                        blankCheck()
-                                    }
+                                    failed = false
+                                    settings.userAgentString = mobileUa
+                                    view?.loadUrl(HOME)
+                                    attempt = attempts.size // later blank checks only fall back to the simple home page
+                                    view?.postDelayed({ blankCheck(attempt) }, 10000)
                                 }
                             }
                         }
                     }
                     loadUrl(if (FbSession.loggedIn()) HOME else LOGIN_LITE)
-                    blankCheck()
+                    postDelayed({ blankCheck(attempt) }, 10000)
                 }
             },
             onRelease = {
