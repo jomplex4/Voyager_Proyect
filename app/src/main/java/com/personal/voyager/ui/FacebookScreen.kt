@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.net.http.SslError
@@ -32,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -111,18 +114,66 @@ private class Bridge(private val vm: AppViewModel) {
     }
 }
 
+/** 1 when a login field is really visible on screen (not just present in the page), 0 otherwise. */
+private const val VISIBLE_INPUT =
+    "(function(){var i=document.querySelectorAll('input[type=password],input[type=email],input[type=text],input[type=tel]');" +
+        "for(var k=0;k<i.length;k++){var r=i[k].getBoundingClientRect();" +
+        "if(r.width>20&&r.height>10&&getComputedStyle(i[k]).visibility!='hidden')return 1}return 0})()"
+
+/** Ways to show Facebook, tried in order: the first that draws a visible login field wins. */
+private class Mode(val login: String, val home: String, val desktop: Boolean, val software: Boolean)
+
+private val MODES = listOf(
+    Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = false),
+    Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
+    Mode("https://www.facebook.com/login/", "https://www.facebook.com/", desktop = true, software = true),
+    Mode("https://mbasic.facebook.com/login/", "https://mbasic.facebook.com/", desktop = false, software = true),
+)
+
 /**
- * The normal Facebook mobile site inside the app, with one extra thing: a download button on every video, reel and
- * photo (feed, pages, channels, search). VOYAGER never sees the password; the login stays in the WebView cookies.
+ * The normal Facebook site inside the app, with a download button on every video, reel and photo once logged in.
+ * VOYAGER never sees the password; the login stays in the WebView cookies.
+ *
+ * The page is shown with the WebView's own default identity (a custom one made Facebook answer with an empty page).
+ * If no login field is visible after a few seconds the next mode is tried (software drawing, desktop page, simple
+ * page). The "Mode" button switches by hand.
  */
 @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
 @Composable
 fun FacebookScreen(vm: AppViewModel) {
     var loggedIn by remember { mutableStateOf(FbSession.loggedIn()) }
     var web by remember { mutableStateOf<WebView?>(null) }
+    var mode by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("Loading…") }
-    var failed by remember { mutableStateOf(false) }
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var consoleError by remember { mutableStateOf("") }
+    var defaultUa by remember { mutableStateOf("") }
+    val wv = remember { runCatching { WebView.getCurrentWebViewPackage()?.versionName }.getOrNull() ?: "?" }
+
+    fun useMode(w: WebView, i: Int) {
+        val m = MODES[i]
+        w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
+        w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
+        consoleError = ""
+        status = "Mode ${i + 1}/${MODES.size} · WebView $wv · Loading…"
+        w.loadUrl(if (FbSession.loggedIn()) m.home else m.login)
+    }
+
+    fun scheduleCheck(w: WebView, my: Int) {
+        w.postDelayed({
+            if (my != mode || loggedIn) return@postDelayed
+            w.evaluateJavascript(VISIBLE_INPUT) { r ->
+                if (my == mode && !loggedIn && r != "1") {
+                    if (my + 1 < MODES.size) {
+                        mode = my + 1
+                        useMode(w, mode)
+                        scheduleCheck(w, mode)
+                    } else {
+                        status = "Facebook could not be drawn in any mode. Tap Mode to try again."
+                    }
+                }
+            }
+        }, 9000)
+    }
 
     BackHandler {
         val w = web
@@ -131,13 +182,25 @@ fun FacebookScreen(vm: AppViewModel) {
 
     Column(Modifier.fillMaxSize().imePadding()) {
         TopBar("Facebook", { vm.pop() }) {
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(Pal.Card2)
+                    .clickable {
+                        val w = web
+                        if (w != null) {
+                            mode = (mode + 1) % MODES.size
+                            useMode(w, mode)
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) { Text("Mode ${mode + 1}/${MODES.size}", style = Txt.Label.copy(color = Pal.White)) }
+            Spacer(Modifier.width(6.dp))
             if (loggedIn) {
                 Box(
                     Modifier.clip(RoundedCornerShape(50)).background(Pal.Card2)
                         .clickable {
                             FbSession.logout()
                             loggedIn = false
-                            web?.loadUrl(LOGIN_LITE)
+                            web?.let { useMode(it, mode) }
                             vm.say("Logged out of Facebook")
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -146,23 +209,10 @@ fun FacebookScreen(vm: AppViewModel) {
             }
         }
         if (status.isNotEmpty()) {
-            Text(status, style = Txt.Small.copy(color = Pal.Gray), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            Text(status, style = Txt.Small.copy(color = Pal.Gray), modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
         }
-        if (failed) {
-            PillButton("Update WebView in Play Store", {
-                val ui = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                try {
-                    ctx.startActivity(ui)
-                } catch (e: Exception) {
-                    runCatching {
-                        ctx.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.webview"))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
-                }
-            }, Modifier.padding(16.dp).fillMaxWidth())
+        if (consoleError.isNotEmpty()) {
+            Text(consoleError, style = Txt.Small.copy(color = Pal.RedBright), maxLines = 2, modifier = Modifier.padding(horizontal = 16.dp))
         }
         AndroidView(
             factory = { c ->
@@ -170,70 +220,20 @@ fun FacebookScreen(vm: AppViewModel) {
                 cm.setAcceptCookie(true)
                 WebView(c).apply {
                     web = this
-                    setBackgroundColor(Color.BLACK)
                     cm.setAcceptThirdPartyCookies(this, true)
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = true
-                    settings.javaScriptCanOpenWindowsAutomatically = false
-                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                    // A plain mobile Chrome identity: the embedded-browser markers made Facebook serve a blank page.
-                    val chrome = Regex("Chrome/[\\d.]+").find(settings.userAgentString)?.value ?: "Chrome/110.0.0.0"
-                    settings.userAgentString =
-                        "Mozilla/5.0 (Linux; Android 11; SM-A032F) AppleWebKit/537.36 (KHTML, like Gecko) $chrome Mobile Safari/537.36"
+                    defaultUa = settings.userAgentString
                     addJavascriptInterface(Bridge(vm), "Voyager")
-                    webChromeClient = WebChromeClient()
-                    val mobileUa = settings.userAgentString
-                    val wvVersion = runCatching { WebView.getCurrentWebViewPackage()?.versionName }.getOrNull() ?: "unknown"
-                    // Different pages and identities, tried in order, because the phone's WebView may not be able to
-                    // draw one of them (the page loads to about 80% and stays white).
-                    val attempts = listOf(
-                        LOGIN_LITE to mobileUa,
-                        "https://free.facebook.com/login.php" to mobileUa,
-                        "https://touch.facebook.com/login.php" to mobileUa,
-                        "https://www.facebook.com/login/" to Net.UA_CHROME,
-                    )
-                    var attempt = 0
-                    var usedLiteHome = false
-                    status = "Loading… (WebView $wvVersion)"
-
-                    var blankRef: (Int) -> Unit = {}
-                    fun blankCheckLater(my: Int) {
-                        postDelayed({ blankRef(my) }, 10000)
-                    }
-
-                    fun nextAttempt(reason: String) {
-                        attempt++
-                        if (attempt < attempts.size) {
-                            settings.userAgentString = attempts[attempt].second
-                            status = "$reason Trying another page (${attempt + 1}/${attempts.size})…"
-                            loadUrl(attempts[attempt].first)
-                            blankCheckLater(attempt)
-                        } else {
-                            failed = true
-                            status = "Facebook cannot be drawn by this phone's WebView (version $wvVersion). Update it and try again."
-                        }
-                    }
-                    fun blankCheck(my: Int) {
-                        evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { len ->
-                            if (my == attempt && (len?.toIntOrNull() ?: 0) < 40) {
-                                if (FbSession.loggedIn()) {
-                                    if (!usedLiteHome) {
-                                        usedLiteHome = true
-                                        status = "Using the simple Facebook page"
-                                        loadUrl(HOME_LITE)
-                                    }
-                                } else nextAttempt("Blank page.")
-                            }
-                        }
-                    }
-                    blankRef = { blankCheck(it) }
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            if (!failed && (status.startsWith("Loading") || status.isEmpty())) {
-                                status = if (newProgress < 100) "Loading $newProgress% (WebView $wvVersion)" else ""
-                            }
+                            val base = "Mode ${mode + 1}/${MODES.size} · WebView $wv"
+                            status = if (newProgress < 100) "$base · Loading $newProgress%" else base
+                        }
+
+                        override fun onConsoleMessage(m: ConsoleMessage?): Boolean {
+                            if (m?.messageLevel() == ConsoleMessage.MessageLevel.ERROR) consoleError = (m.message() ?: "").take(160)
+                            return true
                         }
                     }
                     webViewClient = object : WebViewClient() {
@@ -243,11 +243,11 @@ fun FacebookScreen(vm: AppViewModel) {
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             checkLogin(view)
-                            view?.evaluateJavascript(INJECT, null)
+                            if (FbSession.loggedIn()) view?.evaluateJavascript(INJECT, null)
                         }
 
                         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                            if (request?.isForMainFrame == true) nextAttempt("Could not load (" + (error?.description ?: "error") + ").")
+                            if (request?.isForMainFrame == true) status = "Could not load: " + (error?.description ?: "error")
                         }
 
                         override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
@@ -264,17 +264,13 @@ fun FacebookScreen(vm: AppViewModel) {
                                 cm.flush()
                                 if (!loggedIn) {
                                     loggedIn = true
-                                    failed = false
-                                    settings.userAgentString = mobileUa
-                                    view?.loadUrl(HOME)
-                                    attempt = attempts.size // later blank checks only fall back to the simple home page
-                                    view?.postDelayed({ blankCheck(attempt) }, 10000)
+                                    view?.loadUrl(MODES[mode].home)
                                 }
                             }
                         }
                     }
-                    loadUrl(if (FbSession.loggedIn()) HOME else LOGIN_LITE)
-                    postDelayed({ blankCheck(attempt) }, 10000)
+                    useMode(this, 0)
+                    if (!loggedIn) scheduleCheck(this, 0)
                 }
             },
             onRelease = {

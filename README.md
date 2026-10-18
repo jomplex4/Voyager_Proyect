@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.10
+
+- **Facebook, pantalla en blanco:** el WebView del teléfono (versión 154) es moderno; el problema era mi identidad personalizada del navegador y un detector que contaba texto escondido. Ahora usa la identidad normal del WebView y detecta si hay un campo de inicio de sesión realmente visible. Si no lo hay a los 9 segundos, prueba el siguiente modo: dibujo por software, página de escritorio, página simple. El botón "Mode" (arriba) cambia de modo a mano. La línea de estado muestra el modo, la versión de WebView y el último error de la página.
+
 ## Versión 2.9
 
 - **Facebook, pantalla en blanco al iniciar sesión:** si la página se queda en blanco, la app prueba otras 3 páginas de acceso de Facebook (simple, gratuita y táctil, y la de escritorio) una tras otra. La línea de estado muestra la versión del WebView del teléfono. Si ninguna se dibuja, aparece el botón "Update WebView in Play Store": en teléfonos con WebView antiguo es la única forma de que Facebook se vea dentro de una app.
@@ -110,8 +114,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.9
-git push origin v2.9
+git tag v2.10
+git push origin v2.10
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -137,7 +141,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.9`, `git push origin v2.9`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.10`, `git push origin v2.10`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 
