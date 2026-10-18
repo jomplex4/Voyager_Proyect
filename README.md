@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.15
+
+- Facebook: ya no se fía de la cookie guardada. Siempre abre la página simple (que sí se dibuja en este teléfono): si muestra el login, escribes tus datos ahí; si muestra tu cuenta, abre la web completa con los botones de descarga. Si la web completa manda al login (sesión inválida), borra la sesión y vuelve a la página simple.
+
 ## Versión 2.14
 
 - Facebook: si la sesión guardada está caducada y la página sale vacía, la app la borra sola (una vez) y empieza el login desde la página simple.
@@ -136,8 +140,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.14
-git push origin v2.14
+git tag v2.15
+git push origin v2.15
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -163,7 +167,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.14`, `git push origin v2.14`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.15`, `git push origin v2.15`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

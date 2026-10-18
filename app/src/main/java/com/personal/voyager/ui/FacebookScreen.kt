@@ -51,7 +51,7 @@ private const val VISIBLE_INPUT =
 private class Mode(val login: String, val home: String, val desktop: Boolean, val software: Boolean)
 
 private val MODES = listOf(
-    Mode("https://mbasic.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
+    Mode("https://mbasic.facebook.com/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = false),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://www.facebook.com/login/", "https://www.facebook.com/", desktop = true, software = true),
@@ -181,50 +181,35 @@ fun FacebookScreen(vm: AppViewModel) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
-    var loggedIn by remember { mutableStateOf(FbSession.loggedIn()) }
+    // Never trust a saved cookie: the page itself decides. It always starts on the simple page, which draws on
+    // this phone; if it shows the login, the user types the data there; if it shows the account, the full site opens.
+    var loggedIn by remember { mutableStateOf(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
     var mode by remember { mutableIntStateOf(0) }
     var defaultUa by remember { mutableStateOf("") }
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
-        if (FbSession.loggedIn()) {
-            w.settings.userAgentString = defaultUa
-            w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            w.loadUrl(HOME)
-        } else {
-            w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
-            w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
-            w.loadUrl(m.login)
-        }
+        w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
+        w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
+        w.loadUrl(m.login)
     }
 
-    var recovered = false
+    fun goHome(w: WebView) {
+        w.settings.userAgentString = defaultUa
+        w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        w.loadUrl(HOME)
+    }
 
-    // 9 seconds after loading, check that something is really drawn. Logged out: try the next login mode.
-    // Logged in but empty page (the saved session is stale): wipe it once and start the login that works here.
+    // 9 seconds after a login page loads, if no login field is really visible, try the next mode.
     fun scheduleCheck(w: WebView, my: Int) {
         w.postDelayed({
-            if (my != mode) return@postDelayed
-            if (loggedIn) {
-                w.evaluateJavascript("(document.body ? document.body.innerText.length : 0)") { r ->
-                    if (my == mode && !recovered && (r?.toIntOrNull() ?: 0) < 40) {
-                        recovered = true
-                        FbSession.logout()
-                        loggedIn = false
-                        w.clearCache(true)
-                        mode = 0
-                        useMode(w, 0)
-                        scheduleCheck(w, 0)
-                    }
-                }
-            } else {
-                w.evaluateJavascript(VISIBLE_INPUT) { r ->
-                    if (my == mode && !loggedIn && r != "1" && my + 1 < MODES.size) {
-                        mode = my + 1
-                        useMode(w, mode)
-                        scheduleCheck(w, mode)
-                    }
+            if (my != mode || loggedIn) return@postDelayed
+            w.evaluateJavascript(VISIBLE_INPUT) { r ->
+                if (my == mode && !loggedIn && r != "1" && my + 1 < MODES.size) {
+                    mode = my + 1
+                    useMode(w, mode)
+                    scheduleCheck(w, mode)
                 }
             }
         }, 9000)
@@ -251,31 +236,27 @@ fun FacebookScreen(vm: AppViewModel) {
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             if (loggedIn && isLoginPage(url) && view != null) {
-                                // The saved session expired: start the login again from the page that works here.
+                                // The full site sent us to the login: the saved session is not valid. Clear it and
+                                // start the login again from the simple page (no loop: the cookie is gone).
                                 loggedIn = false
                                 FbSession.logout()
                                 mode = 0
                                 useMode(view, 0)
                                 scheduleCheck(view, 0)
-                                return
                             }
-                            checkLogin(view)
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            checkLogin(view)
-                            if (FbSession.loggedIn()) view?.evaluateJavascript(INJECT, null)
-                        }
-
-                        private fun checkLogin(view: WebView?) {
-                            if (FbSession.loggedIn()) {
+                            val u = url ?: return
+                            if (FbSession.loggedIn() && !isLoginPage(u) && u.contains("facebook.com")) {
                                 cm.flush()
-                                if (!loggedIn && !isLoginPage(view?.url)) {
+                                if (u.contains("mbasic")) {
+                                    // The simple page shows the account: open the full site with the download buttons.
                                     loggedIn = true
-                                    view?.settings?.userAgentString = defaultUa
-                                    view?.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                                    view?.loadUrl(HOME)
-                                    view?.let { scheduleCheck(it, mode) }
+                                    view?.let { goHome(it) }
+                                } else if (view != null) {
+                                    loggedIn = true
+                                    view.evaluateJavascript(INJECT, null)
                                 }
                             }
                         }
