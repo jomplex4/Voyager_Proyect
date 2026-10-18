@@ -21,6 +21,12 @@ object Storage {
     fun root(): File = File(Environment.getExternalStorageDirectory(), "Voyager")
     fun tmp(): File = File(root(), ".tmp")
 
+    const val VIDEO = "Voyager video"
+    const val MUSIC = "Voyager music"
+    const val PHOTO = "Voyager photo"
+
+    fun dir(sub: String): File = File(root(), sub).apply { mkdirs() }
+
     fun prepare() {
         root().mkdirs()
         tmp().mkdirs()
@@ -28,12 +34,15 @@ object Storage {
         if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
     }
 
+    /** Looks in the music and video subfolders, and in the root for files saved by older versions. */
     fun existsBase(base: String): Boolean =
-        root().listFiles()?.any { it.isFile && it.name.startsWith("$base.") } == true
+        listOf(root(), File(root(), VIDEO), File(root(), MUSIC)).any { d ->
+            d.listFiles()?.any { it.isFile && it.name.startsWith("$base.") } == true
+        }
 
     /** Same volume, so this is a rename (instant), not a copy. */
-    fun move(src: File, name: String): File {
-        val dest = File(root(), name)
+    fun move(src: File, name: String, sub: String): File {
+        val dest = File(dir(sub), name)
         if (dest.exists()) dest.delete()
         if (!src.renameTo(dest)) {
             src.copyTo(dest, overwrite = true)

@@ -3,7 +3,13 @@ package com.personal.voyager.fb
 import android.net.Uri
 import android.text.Html
 import com.personal.voyager.core.Net
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -96,14 +102,44 @@ object Facebook {
         }.build()
     }
 
-    suspend fun fetch(inputUrl: String): Info = withContext(Dispatchers.IO) {
-        parsePage(inputUrl, Net.UA_CHROME)?.let { return@withContext it }
-        parsePage(mobileVariant(inputUrl), Net.UA_MOBILE)?.let { return@withContext it }
-        if (FbSession.loggedIn()) {
-            parseMbasic(inputUrl)?.let { return@withContext it }
-            throw FbException(NOT_AVAILABLE)
+    private val infoCache = LinkedHashMap<String, Pair<Long, Info>>()
+    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * The desktop and the mobile page are requested at the same time and the first answer wins (a bad connection no
+     * longer waits for one page and then the other). If that answer has no DASH qualities the other one gets 4 more
+     * seconds. Results are kept for 10 minutes, so choosing a format and starting the download do not read the page twice.
+     */
+    suspend fun fetch(inputUrl: String, fresh: Boolean = false): Info {
+        val now = System.currentTimeMillis()
+        if (!fresh) {
+            val hit = synchronized(infoCache) { infoCache[inputUrl]?.takeIf { now - it.first < 10 * 60_000 } }
+            if (hit != null) return hit.second
         }
-        throw FbException(LOGIN_NEEDED, loginNeeded = true)
+        var netError: Throwable? = null
+        val a = fetchScope.async { runCatching { parsePage(inputUrl, Net.UA_CHROME) }.onFailure { netError = it }.getOrNull() }
+        val b = fetchScope.async { runCatching { parsePage(mobileVariant(inputUrl), Net.UA_MOBILE) }.onFailure { netError = it }.getOrNull() }
+        val first = select<Pair<Info?, Deferred<Info?>>> {
+            a.onAwait { it to b }
+            b.onAwait { it to a }
+        }
+        var info: Info? = first.first ?: first.second.await()
+        if (info != null && info.dashVideos.isEmpty()) {
+            val o = withTimeoutOrNull(4000) { first.second.await() }
+            if (o != null && o.dashVideos.isNotEmpty()) info = o
+        }
+        if (info == null && FbSession.loggedIn()) {
+            info = withContext(Dispatchers.IO) { parseMbasic(inputUrl) }
+        }
+        if (info == null) {
+            netError?.let { throw it } // no connection: say so instead of asking to log in
+            throw if (FbSession.loggedIn()) FbException(NOT_AVAILABLE) else FbException(LOGIN_NEEDED, loginNeeded = true)
+        }
+        synchronized(infoCache) {
+            infoCache[inputUrl] = now to info
+            while (infoCache.size > 8) infoCache.remove(infoCache.keys.first())
+        }
+        return info
     }
 
     private fun mobileVariant(url: String): String = hostSwap(url, "m.facebook.com", setOf("www.facebook.com", "facebook.com", "web.facebook.com"))
@@ -162,7 +198,7 @@ object Facebook {
         val source = body.source()
         val buf = Buffer()
         var foundAt = -1
-        val keys = (hdKeys + sdKeys).map { "\"$it\"" }
+        val keys = (hdKeys + sdKeys + listOf("dash_manifest")).map { "\"$it\"" }
         while (sb.length < 4_000_000) {
             if (source.read(buf, 65536L) < 0L) break
             sb.append(buf.readUtf8())

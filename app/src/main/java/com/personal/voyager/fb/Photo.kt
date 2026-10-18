@@ -14,7 +14,7 @@ object Photo {
         Net.client.newCall(req).execute().use { r ->
             val input = r.body?.byteStream()
             if (!r.isSuccessful || input == null) return false
-            val f = File(Storage.root(), "Facebook photo ${System.currentTimeMillis()}.jpg")
+            val f = File(Storage.dir(Storage.PHOTO), "Facebook photo ${System.currentTimeMillis()}.jpg")
             input.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
             Storage.scan(ctx, f, "image/jpeg")
             true

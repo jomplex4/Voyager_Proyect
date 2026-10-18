@@ -4,6 +4,18 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.12
+
+- Carpetas: `Voyager/Voyager video`, `Voyager/Voyager music` y `Voyager/Voyager photo`. Lo descargado antes queda donde estaba.
+- Facebook sin conexión ahora dice "No connection" en vez de pedir iniciar sesión.
+
+## Versión 2.11
+
+- **Facebook a pantalla completa:** sin barra superior, sin textos ni barra inferior; solo una flecha redonda arriba a la izquierda para salir. La pantalla no se apaga mientras estés en esa página.
+- **Botón de descarga:** en la página de un reel o video hay un solo botón a la derecha (lejos del aviso "Abrir aplicación") que baja el video que se ve en pantalla, nunca la foto de portada. En el inicio, cada video tiene su botón y las fotos normales el suyo. Después de cada toque se ignoran los toques durante 2,5 segundos, y una foto no se guarda dos veces.
+- **Velocidad:** la lista de formatos y el arranque de la descarga de Facebook ya no leen la página dos veces; las dos versiones de la página se piden a la vez y el resultado se guarda 10 minutos.
+- **Caché:** al salir de Facebook, si el caché del teléfono pasa de 20 MB se vacía el caché web (la sesión se conserva).
+
 ## Versión 2.10
 
 - **Facebook, pantalla en blanco:** el WebView del teléfono (versión 154) es moderno; el problema era mi identidad personalizada del navegador y un detector que contaba texto escondido. Ahora usa la identidad normal del WebView y detecta si hay un campo de inicio de sesión realmente visible. Si no lo hay a los 9 segundos, prueba el siguiente modo: dibujo por software, página de escritorio, página simple. El botón "Mode" (arriba) cambia de modo a mano. La línea de estado muestra el modo, la versión de WebView y el último error de la página.
@@ -114,8 +126,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.10
-git push origin v2.10
+git tag v2.12
+git push origin v2.12
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -141,7 +153,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.10`, `git push origin v2.10`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.12`, `git push origin v2.12`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

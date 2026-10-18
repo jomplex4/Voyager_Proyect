@@ -238,7 +238,13 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val savedPhotos = HashSet<String>()
+
     fun savePhoto(src: String) {
+        if (!savedPhotos.add(src)) {
+            say("Photo already saved")
+            return
+        }
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) { Photo.save(app, src) }
             say(if (ok) "Photo saved in the Voyager folder" else "Could not save the photo")
@@ -367,7 +373,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         sheetJob = viewModelScope.launch {
             try {
                 val info = Facebook.fetch(url)
-                val (hdSize, sdSize) = coroutineScope {
+                val (hdSize, sdSize) = if (Facebook.bestReps(info).isNotEmpty() && info.dashAudio != null) (-1L to -1L) else coroutineScope {
                     val h = info.hdUrl?.let { async { Facebook.probeSize(it) } }
                     val s = info.sdUrl?.let { async { Facebook.probeSize(it) } }
                     (h?.await() ?: -1L) to (s?.await() ?: -1L)

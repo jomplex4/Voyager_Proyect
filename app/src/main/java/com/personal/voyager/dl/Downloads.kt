@@ -335,7 +335,7 @@ object Downloads {
         // 3) move into the Voyager folder (a rename, instant) and register
         val fresh = get(id) ?: job
         val base = Names.base(fresh.prefix, fresh.title, plan.tag)
-        val dest = withContext(Dispatchers.IO) { Storage.move(out, "$base.$ext") }
+        val dest = withContext(Dispatchers.IO) { Storage.move(out, "$base.$ext", if (isAudio) Storage.MUSIC else Storage.VIDEO) }
         Storage.scan(app, dest, mime)
         val thumb = withContext(Dispatchers.IO) {
             val c = cover

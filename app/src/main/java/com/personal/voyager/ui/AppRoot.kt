@@ -176,7 +176,7 @@ private fun AppRoot(vm: AppViewModel) {
                 is Screen.Facebook -> FacebookScreen(vm)
             }
         }
-        if (!fs && !imeVisible) BottomBar(vm)
+        if (!fs && !imeVisible && vm.current !is Screen.Facebook) BottomBar(vm)
     }
 
     if (vm.fbLoginPrompt) {

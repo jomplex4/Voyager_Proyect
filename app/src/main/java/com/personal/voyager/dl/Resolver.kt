@@ -8,6 +8,7 @@ import com.personal.voyager.yt.LiveStreamException
 import com.personal.voyager.yt.NoStreamException
 import com.personal.voyager.yt.YtRepo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.stream.Stream
@@ -17,7 +18,7 @@ import org.schabi.newpipe.extractor.stream.StreamType
 object Resolver {
 
     suspend fun resolve(job: DlJob, allowWebm: Boolean = true, fresh: Boolean = false): Plan = withContext(Dispatchers.IO) {
-        if (job.source == "fb") resolveFb(job) else resolveYt(job, allowWebm, fresh)
+        if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
     }
 
     private fun ytUa(url: String): String =
@@ -57,8 +58,8 @@ object Resolver {
         return Plan.Merge(src(sel.video!!), src(sel.audio!!), sel.webm, tag)
     }
 
-    private suspend fun resolveFb(job: DlJob): Plan {
-        val info = Facebook.fetch(job.url)
+    private suspend fun resolveFb(job: DlJob, fresh: Boolean): Plan {
+        val info = Facebook.fetch(job.url, fresh)
         val choice = job.choice
         fun mk(url: String, size: Long) = Src(url, size, "fb:$size", Net.UA_CHROME)
 
@@ -75,7 +76,12 @@ object Resolver {
             val a = info.dashAudio
             if (pick != null && a != null) {
                 val v = pick.second
-                return Plan.Merge(mk(v.url, Facebook.probeSize(v.url)), mk(a.url, Facebook.probeSize(a.url)), false, "${pick.first}P")
+                val (vs, asz) = kotlinx.coroutines.coroutineScope {
+                    val x = async { Facebook.probeSize(v.url) }
+                    val y = async { Facebook.probeSize(a.url) }
+                    x.await() to y.await()
+                }
+                return Plan.Merge(mk(v.url, vs), mk(a.url, asz), false, "${pick.first}P")
             }
         }
         val wantHd = choice == "F:HD"
