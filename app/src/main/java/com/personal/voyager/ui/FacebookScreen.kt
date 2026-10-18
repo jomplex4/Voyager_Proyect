@@ -12,7 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -51,10 +52,10 @@ private const val VISIBLE_INPUT =
 private class Mode(val login: String, val home: String, val desktop: Boolean, val software: Boolean)
 
 private val MODES = listOf(
-    Mode("https://mbasic.facebook.com/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = false),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://www.facebook.com/login/", "https://www.facebook.com/", desktop = true, software = true),
+    Mode("https://mbasic.facebook.com/login/", "https://mbasic.facebook.com/", desktop = false, software = true),
 )
 private const val HOME = "https://m.facebook.com/"
 
@@ -183,16 +184,22 @@ fun FacebookScreen(vm: AppViewModel) {
     }
     // Never trust a saved cookie: the page itself decides. It always starts on the simple page, which draws on
     // this phone; if it shows the login, the user types the data there; if it shows the account, the full site opens.
-    var loggedIn by remember { mutableStateOf(false) }
+    var loggedIn by remember { mutableStateOf(FbSession.loggedIn()) }
     var web by remember { mutableStateOf<WebView?>(null) }
     var mode by remember { mutableIntStateOf(0) }
     var defaultUa by remember { mutableStateOf("") }
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
-        w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
-        w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
-        w.loadUrl(m.login)
+        if (loggedIn) {
+            w.settings.userAgentString = defaultUa
+            w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            w.loadUrl(HOME)
+        } else {
+            w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
+            w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
+            w.loadUrl(m.login)
+        }
     }
 
     fun goHome(w: WebView) {
@@ -212,7 +219,18 @@ fun FacebookScreen(vm: AppViewModel) {
                     scheduleCheck(w, mode)
                 }
             }
-        }, 9000)
+        }, 7000)
+    }
+
+    // Long press on the back arrow: forget the saved login and start the login modes from the beginning.
+    fun resetLogin() {
+        FbSession.logout()
+        loggedIn = false
+        val w = web ?: return
+        mode = 0
+        useMode(w, 0)
+        scheduleCheck(w, 0)
+        vm.say("Login reset")
     }
 
     BackHandler {
@@ -239,7 +257,6 @@ fun FacebookScreen(vm: AppViewModel) {
                                 // The full site sent us to the login: the saved session is not valid. Clear it and
                                 // start the login again from the simple page (no loop: the cookie is gone).
                                 loggedIn = false
-                                FbSession.logout()
                                 mode = 0
                                 useMode(view, 0)
                                 scheduleCheck(view, 0)
@@ -269,7 +286,6 @@ fun FacebookScreen(vm: AppViewModel) {
                 web = null
                 // The web cache only grows while browsing: empty it when leaving once it is large. The login stays.
                 it.clearCache(true)
-                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
                 CookieManager.getInstance().flush()
                 it.destroy()
             },
@@ -277,7 +293,8 @@ fun FacebookScreen(vm: AppViewModel) {
         )
         Box(
             Modifier.padding(8.dp).size(44.dp).clip(CircleShape).background(Color(0x99000000))
-                .clickable { vm.pop() }.align(Alignment.TopStart),
+                .pointerInput(Unit) { detectTapGestures(onTap = { vm.pop() }, onLongPress = { resetLogin() }) }
+                .align(Alignment.TopStart),
             contentAlignment = Alignment.Center,
         ) { Ic(R.drawable.ic_arrow_back, size = 24.dp) }
     }
