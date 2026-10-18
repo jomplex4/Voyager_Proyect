@@ -7,7 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -48,11 +50,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -68,6 +73,7 @@ import com.personal.voyager.core.Prefs
 import com.personal.voyager.player.PlaybackService
 import com.personal.voyager.player.PlayerHub
 import com.personal.voyager.vm.AppViewModel
+import com.personal.voyager.vm.ClipLink
 import com.personal.voyager.vm.Screen
 import com.personal.voyager.yt.ChannelHeader
 import com.personal.voyager.yt.PlaylistHeader
@@ -76,59 +82,66 @@ import kotlinx.coroutines.CancellationException
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
 
-// ---------------- clipboard card ----------------
+// ---------------- home: copied links ----------------
 
 @Composable
-fun ClipCard(vm: AppViewModel) {
-    val c = vm.clip ?: return
+fun ClipRow(vm: AppViewModel, c: ClipLink) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp)).background(Pal.Card2).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Thumb(c.thumb, Modifier.size(width = 64.dp, height = 48.dp), RoundedCornerShape(8.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("Link copied", style = Txt.Row)
-            Text(Links.short(c.url, 28), style = Txt.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (Links.isFacebook(c.url)) "Facebook" else "YouTube", style = Txt.Row)
+            Text(Links.short(c.url, 26), style = Txt.Small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(
-            Modifier.clip(RoundedCornerShape(50)).background(Pal.Red).clickable { vm.downloadFromClip() }
-                .padding(horizontal = 18.dp, vertical = 9.dp),
+            Modifier.clip(RoundedCornerShape(50)).background(Pal.Red).clickable { vm.downloadFromClip(c) }
+                .padding(horizontal = 16.dp, vertical = 9.dp),
         ) { Text("Download", style = Txt.Label.copy(color = Pal.White)) }
-        IconTap(R.drawable.ic_close, { vm.dismissClip() }, tint = Pal.Gray, size = 18.dp, box = 36.dp)
+        IconTap(R.drawable.ic_close, { vm.dismissClip(c) }, tint = Pal.Gray, size = 18.dp, box = 36.dp)
     }
 }
-
-// ---------------- home ----------------
 
 @Composable
 fun HomeScreen(vm: AppViewModel) {
     Column(Modifier.fillMaxSize()) {
-        ClipCard(vm)
-        Column(
-            Modifier.weight(1f).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            LogoTile(72.dp)
-            Spacer(Modifier.height(18.dp))
-            Text("VOYAGER", style = Txt.Wordmark)
-            Spacer(Modifier.height(40.dp))
-            Row(
-                Modifier.padding(horizontal = 24.dp).fillMaxWidth().height(56.dp)
-                    .clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Pal.Line), RoundedCornerShape(50))
-                    .background(Pal.Card).clickable { vm.push(Screen.Search()) }.padding(start = 18.dp, end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Ic(R.drawable.ic_download, tint = Pal.Gray, size = 22.dp)
-                Spacer(Modifier.width(12.dp))
-                Text("Search or paste a link", style = Txt.Body.copy(color = Pal.Gray), modifier = Modifier.weight(1f))
-                Box(Modifier.size(42.dp).clip(CircleShape).background(Pal.Red), contentAlignment = Alignment.Center) {
-                    Ic(R.drawable.ic_search, size = 22.dp)
-                }
+        // Same proportions as the reference screenshot: logo about 43% of the width, magnifier at the right.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val w = maxWidth
+            Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(R.drawable.dm_logo),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.padding(start = w * (35f / 720f)).width(w * (307f / 720f)),
+                )
+                Spacer(Modifier.weight(1f))
+                IconTap(R.drawable.ic_person, { vm.push(Screen.Facebook) }, size = 24.dp)
+                IconTap(R.drawable.ic_search, { vm.push(Screen.Search()) }, size = 26.dp)
+                Spacer(Modifier.width(8.dp))
             }
-            Spacer(Modifier.height(72.dp))
+        }
+        LaunchedEffect(Unit) {
+            while (true) {
+                vm.purgeClips()
+                delay(20_000)
+            }
+        }
+        if (vm.clips.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 40.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Copy a YouTube or Facebook link and it will show up here",
+                    style = Txt.Body.copy(color = Pal.Gray),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                itemsIndexed(vm.clips) { _, c -> ClipRow(vm, c) }
+            }
         }
     }
 }
@@ -142,6 +155,17 @@ fun SearchScreen(vm: AppViewModel, initial: String) {
     var recents by remember { mutableStateOf(Prefs.recents()) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { YtRepo.warmUp() }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(text) {
+        val q = text.trim()
+        if (q.length < 2 || Links.firstUrl(q) != null) {
+            suggestions = emptyList()
+        } else {
+            delay(220)
+            suggestions = YtRepo.suggestions(q)
+        }
+    }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(
@@ -168,8 +192,20 @@ fun SearchScreen(vm: AppViewModel, initial: String) {
             )
             if (text.isNotEmpty()) IconTap(R.drawable.ic_close, { text = "" }, tint = Pal.Gray, size = 20.dp)
         }
-        ClipCard(vm)
-        if (recents.isNotEmpty()) {
+        if (text.isNotBlank() && suggestions.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                suggestions.forEach { sg ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.submit(sg) }.padding(horizontal = 20.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Ic(R.drawable.ic_search, tint = Pal.Gray, size = 20.dp)
+                        Spacer(Modifier.width(16.dp))
+                        Text(sg, style = Txt.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        } else if (text.isBlank() && recents.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -260,7 +296,7 @@ fun ResultsScreen(vm: AppViewModel, query: String) {
 // ---------------- video detail ----------------
 
 @Composable
-private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
+private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier, zoom: Boolean = false) {
     AndroidView(
         factory = { c ->
             val v = LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView
@@ -268,18 +304,66 @@ private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier) {
             v.setFullscreenButtonClickListener { fs -> vm.fullscreen = fs }
             v
         },
-        update = { it.setFullscreenButtonState(vm.fullscreen) },
+        update = {
+            it.setFullscreenButtonState(vm.fullscreen)
+            // Fullscreen fills the whole screen (the video is zoomed to cover it instead of showing black bars).
+            it.resizeMode = if (zoom) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        },
         onRelease = { it.player = null },
         modifier = modifier,
     )
 }
 
+private fun saveResume(i: StreamInfo, posMs: Long) {
+    if (i.duration <= 600) return
+    val id = i.id ?: return
+    val st = PlayerHub.peek()?.playbackState
+    // Finished (ended, or in the last seconds): the saved point is deleted. A partial watch keeps it.
+    if (st == Player.STATE_ENDED || posMs >= i.duration * 1000 - 10_000) Prefs.resumeClear(id)
+    else if (posMs > 5_000) Prefs.resumeSet(id, posMs)
+}
+
+@Composable
+private fun QualityChip(heights: List<Int>, current: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier.clip(RoundedCornerShape(50)).background(Color(0x99000000)).clickable { open = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { Text("${current}p", style = Txt.Label.copy(color = Pal.White)) }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            heights.forEach { h ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("${h}p", style = Txt.Body.copy(color = if (h == current) Pal.RedBright else Pal.White)) },
+                    onClick = { open = false; onPick(h) },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     val ctx = LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !Prefs.askedNotifications &&
+            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Prefs.askedNotifications = true
+            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     var info by remember(s.url) { mutableStateOf<StreamInfo?>(null) }
     var error by remember(s.url) { mutableStateOf<String?>(null) }
     var previewFailed by remember(s.url) { mutableStateOf(false) }
+    var quality by remember(s.url) { mutableStateOf(0) }
+    var thumbUrl by remember(s.url) { mutableStateOf<String?>(null) }
+    val heights = remember(info) { info?.let { com.personal.voyager.yt.Formats.availableHeights(it) } ?: emptyList() }
     val related = remember(info) { info?.let { YtRepo.related(it) } ?: emptyList() }
 
     LaunchedEffect(s.url) {
@@ -291,7 +375,13 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
                 return@LaunchedEffect
             }
             val thumb = YtRepo.pickThumb(i.thumbnails) ?: s.thumb
-            if (PlayerHub.load(ctx, i, thumb)) {
+            thumbUrl = thumb
+            // Videos over 10 minutes continue from where they were left.
+            val saved = if (i.duration > 600) Prefs.resumeGet(i.id ?: "") else 0L
+            val used = PlayerHub.load(ctx, i, thumb, PlayerHub.defaultHeight(i), saved)
+            if (used > 0) {
+                quality = used
+                if (saved > 0) vm.say("Continuing from " + com.personal.voyager.core.Fmt.duration(saved / 1000))
                 ctx.startService(Intent(ctx, PlaybackService::class.java))
             } else previewFailed = true
         } catch (e: CancellationException) {
@@ -301,40 +391,59 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
         }
     }
 
+    // Save the position every few seconds (also while the app is in the background).
+    LaunchedEffect(info) {
+        val i = info ?: return@LaunchedEffect
+        if (i.duration <= 600) return@LaunchedEffect
+        while (true) {
+            delay(5000)
+            PlayerHub.peek()?.let { saveResume(i, it.currentPosition) }
+        }
+    }
+
+    fun pick(h: Int) {
+        val i = info ?: return
+        val pos = PlayerHub.get(ctx).currentPosition
+        val used = PlayerHub.load(ctx, i, thumbUrl, h, pos)
+        if (used > 0) quality = used else vm.say("That quality is not available")
+    }
+
     DisposableEffect(s.url) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 previewFailed = true
             }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                view.keepScreenOn = playWhenReady
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) info?.id?.let { Prefs.resumeClear(it) }
+            }
         }
+        view.keepScreenOn = true
         val player = PlayerHub.get(ctx)
         player.addListener(listener)
         onDispose {
+            info?.let { saveResume(it, player.currentPosition) }
             player.removeListener(listener)
+            view.keepScreenOn = false
             PlayerHub.stopPlayback()
             ctx.stopService(Intent(ctx, PlaybackService::class.java))
             vm.fullscreen = false
         }
     }
 
-    // Keep audio playing in the background but stop decoding video while the screen is off.
-    val owner = LocalLifecycleOwner.current
-    DisposableEffect(owner) {
-        val obs = LifecycleEventObserver { _, e ->
-            val p = PlayerHub.peek() ?: return@LifecycleEventObserver
-            if (e == Lifecycle.Event.ON_STOP || e == Lifecycle.Event.ON_START) {
-                val off = e == Lifecycle.Event.ON_STOP
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, off).build()
-            }
-        }
-        owner.lifecycle.addObserver(obs)
-        onDispose { owner.lifecycle.removeObserver(obs) }
-    }
+    // The player is never reconfigured when the app goes to the background or comes back: touching the video
+    // track made ExoPlayer drop its buffer and start loading again.
 
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            PreviewPlayer(vm, Modifier.fillMaxSize())
+            PreviewPlayer(vm, Modifier.fillMaxSize(), zoom = true)
+            if (heights.isNotEmpty() && quality > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) { QualityChip(heights, quality) { pick(it) } }
+            }
         }
         return
     }
@@ -351,6 +460,9 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
             }
             Box(Modifier.align(Alignment.TopStart).padding(4.dp)) {
                 IconTap(R.drawable.ic_arrow_back, { vm.pop() })
+            }
+            if (heights.isNotEmpty() && quality > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(10.dp)) { QualityChip(heights, quality) { pick(it) } }
             }
         }
         val i = info

@@ -17,9 +17,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/** Keeps downloads alive in the background. Standard system progress notification, nothing custom. */
+/**
+ * Keeps downloads alive while the screen is off. Android requires a notification for this kind of service, so it
+ * uses a blocked channel (nothing is shown) and it is posted ONCE per change in the number of files, never per
+ * progress tick: updating it several times a second makes the system UI work non-stop.
+ */
 class DownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var collector: Job? = null
@@ -30,21 +36,26 @@ class DownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
+        // Channels keep the settings of the first time they were created, so version 1.0.0's visible channel is
+        // removed and a new blocked one is used.
+        runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.notif_channel_downloads), NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, getString(R.string.notif_channel_downloads), NotificationManager.IMPORTANCE_NONE)
         )
         wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "voyager:downloads")
     }
 
+    private fun pending(list: List<DlJob>) = list.count { it.status == JobStatus.QUEUED || it.running }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(ID, build(Downloads.jobs.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        startForeground(ID, build(pending(Downloads.jobs.value)), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         if (collector == null) {
             collector = scope.launch {
-                Downloads.jobs.collect { list ->
-                    if (list.none { it.status == JobStatus.QUEUED || it.running }) {
+                Downloads.jobs.map { pending(it) }.distinctUntilChanged().collect { count ->
+                    if (count == 0) {
                         finish()
                     } else {
-                        getSystemService(NotificationManager::class.java).notify(ID, build(list))
+                        getSystemService(NotificationManager::class.java).notify(ID, build(count))
                         if (wake?.isHeld == false) wake?.acquire(6L * 60 * 60 * 1000)
                     }
                 }
@@ -71,16 +82,7 @@ class DownloadService : Service() {
         super.onDestroy()
     }
 
-    private fun build(list: List<DlJob>): Notification {
-        val active = list.filter { it.running }
-        val processing = active.any { it.status == JobStatus.PROCESSING }
-        val pct = if (active.isEmpty()) 0 else (active.map { it.progress }.average() * 100).toInt()
-        val waiting = list.count { it.status == JobStatus.QUEUED }
-        val text = when {
-            active.isEmpty() -> "Waiting to start…"
-            processing && active.all { it.status == JobStatus.PROCESSING } -> "Processing…"
-            else -> "Downloading ${active.size + waiting} file(s) · $pct%"
-        }
+    private fun build(count: Int): Notification {
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java)
@@ -91,19 +93,19 @@ class DownloadService : Service() {
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle("VOYAGER")
-            .setContentText(text)
+            .setContentText(if (count <= 1) "Downloading" else "Downloading $count files")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setProgress(100, pct, active.isEmpty() || processing)
             .setContentIntent(open)
             .build()
     }
 
     companion object {
-        private const val CHANNEL = "downloads"
+        private const val OLD_CHANNEL = "downloads"
+        private const val CHANNEL = "downloads_silent"
         private const val ID = 1001
     }
 }

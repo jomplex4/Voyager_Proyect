@@ -19,6 +19,9 @@ import com.personal.voyager.yt.AudioKind
 import com.personal.voyager.yt.Formats
 import com.personal.voyager.yt.YtRepo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.personal.voyager.fb.Photo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,11 +40,12 @@ sealed class Screen {
     data class Playlist(val url: String, val name: String?) : Screen()
     data object PlayHome : Screen()
     data object Downloading : Screen()
+    data object Facebook : Screen()
 }
 
 enum class Tab { DOWNLOAD, PLAY }
 
-class ClipLink(val url: String, val thumb: String?)
+class ClipLink(val url: String, val thumb: String?, val at: Long, val key: String)
 
 class SheetRow(
     val id: String,
@@ -54,13 +58,17 @@ class SheetRow(
 class SheetData(
     val title: String,
     val thumb: String?,
-    val domain: String,
+    domain: String,
     val fromClipboard: Boolean,
-    val audio: List<SheetRow>,
-    val video: List<SheetRow>,
+    audioInit: List<SheetRow>,
+    videoInit: List<SheetRow>,
     val preselect: String?,
     val onConfirm: (String) -> Unit,
-)
+) {
+    var domain by mutableStateOf(domain)
+    var audio by mutableStateOf(audioInit)
+    var video by mutableStateOf(videoInit)
+}
 
 sealed class SheetUi {
     data object Loading : SheetUi()
@@ -72,12 +80,25 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     val dlStack = mutableStateListOf<Screen>(Screen.Home)
     val playStack = mutableStateListOf<Screen>(Screen.PlayHome)
     var fullscreen by mutableStateOf(false)
-    var clip by mutableStateOf<ClipLink?>(null)
+    var fbLoginPrompt by mutableStateOf(false)
+    val clips = mutableStateListOf<ClipLink>()
     var sheet by mutableStateOf<SheetUi?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     private var sheetJob: Job? = null
-    private var dismissedClip: String? = null
+    private val dismissed = LinkedHashSet<String>()
+    private var pendingClip: String? = null
+
+    init {
+        Prefs.clips().forEach { clips.add(ClipLink(it.url, it.thumb, it.at, it.key)) }
+        purgeClips()
+        dismissed.addAll(Prefs.dismissedClips())
+    }
+
+    private fun saveClips() {
+        Prefs.saveClips(clips.map { Prefs.ClipRec(it.url, it.thumb, it.at, it.key) })
+        Prefs.saveDismissed(dismissed.toList().takeLast(40))
+    }
 
     private fun stack() = if (tab == Tab.DOWNLOAD) dlStack else playStack
     val current: Screen get() = stack().last()
@@ -151,30 +172,62 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ---------------- clipboard ----------------
 
+    /** Copied links live for 10 minutes: nothing piles up and nothing stale is shown. */
+    fun purgeClips() {
+        val now = System.currentTimeMillis()
+        val old = clips.filter { now - it.at > CLIP_TTL_MS }
+        if (old.isNotEmpty()) {
+            clips.removeAll(old.toSet())
+            old.forEach { dismissed.add(it.key) }
+            saveClips()
+        }
+    }
+
     fun readClipboard() {
+        purgeClips()
         val cm = app.getSystemService(ClipboardManager::class.java) ?: return
         val text = runCatching {
             cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString()
         }.getOrNull()
         val url = Links.firstUrl(text)
         if (url == null || !Links.isSupported(url)) return
-        if (url == dismissedClip || clip?.url == url) return
-        clip = ClipLink(url, Links.thumbForYoutube(url))
+        val ts = runCatching { cm.primaryClipDescription?.timestamp ?: 0L }.getOrDefault(0L)
+        val now = System.currentTimeMillis()
+        if (ts > 0 && now - ts > CLIP_TTL_MS) return
+        val key = "$url@$ts"
+        if (key in dismissed || clips.any { it.key == key }) return
+        clips.removeAll { it.url == url }
+        clips.add(0, ClipLink(url, Links.thumbForYoutube(url), if (ts > 0) ts else now, key))
+        while (clips.size > 30) clips.removeAt(clips.lastIndex)
+        saveClips()
         if (Links.isFacebook(url)) {
             viewModelScope.launch {
                 val info = runCatching { Facebook.fetch(url) }.getOrNull() ?: return@launch
-                if (clip?.url == url) clip = ClipLink(url, info.thumb)
+                val idx = clips.indexOfFirst { it.key == key }
+                if (idx >= 0) {
+                    val c = clips[idx]
+                    clips[idx] = ClipLink(url, info.thumb, c.at, c.key)
+                    saveClips()
+                }
             }
         }
     }
 
-    fun dismissClip() {
-        dismissedClip = clip?.url
-        clip = null
+    fun dismissClip(c: ClipLink) {
+        clips.remove(c)
+        dismissed.add(c.key)
+        saveClips()
     }
 
-    fun downloadFromClip() {
-        val c = clip ?: return
+    /** Called after a download starts from a copied link: that link leaves the list. */
+    fun dismissClip() {
+        val k = pendingClip ?: return
+        pendingClip = null
+        clips.firstOrNull { it.key == k }?.let { dismissClip(it) }
+    }
+
+    fun downloadFromClip(c: ClipLink) {
+        pendingClip = c.key
         if (Links.isFacebook(c.url)) {
             downloadFacebook(c.url, true)
             return
@@ -182,6 +235,19 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (YtRepo.linkType(c.url) == StreamingService.LinkType.STREAM) downloadVideoUrl(c.url, true)
             else openUrl(c.url)
+        }
+    }
+
+    private val savedPhotos = HashSet<String>()
+
+    fun savePhoto(src: String) {
+        if (!savedPhotos.add(src)) {
+            say("Photo already saved")
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { Photo.save(app, src) }
+            say(if (ok) "Photo saved in the Voyager folder" else "Could not save the photo")
         }
     }
 
@@ -239,14 +305,15 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         val title = info.name ?: ""
         val url = info.url
         val dur = info.duration
+        val uploader = info.uploaderName ?: ""
         sheet = SheetUi.Ready(
             SheetData(
                 title = title, thumb = thumb, domain = Links.domain(url).ifEmpty { "youtube.com" },
-                fromClipboard = fromClipboard, audio = audio, video = video,
+                fromClipboard = fromClipboard, audioInit = audio, videoInit = video,
                 preselect = pickPreselect(audio, video),
             ) { choice ->
                 Prefs.lastChoice = choice
-                enqueue(listOf(Spec("yt", url, title, thumb, dur, choice)))
+                enqueue(listOf(Spec("yt", url, title, thumb, dur, choice, uploader = uploader)))
                 if (fromClipboard) dismissClip()
             }
         )
@@ -254,27 +321,50 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun showPlaylistSheet(videos: List<Item.Video>, positions: List<Int>, title: String) {
         val n = videos.size
-        val label = "≈ $n video" + if (n == 1) "" else "s"
+        val totalSec = videos.sumOf { it.durationSec }
+        val domain = "youtube.com · $n video" + if (n == 1) "" else "s"
+        fun est(bytes: Long) = if (bytes > 0) "≈ " + Fmt.size(bytes) else ""
+        val typicalMbps = listOf(360 to 0.6, 480 to 0.9, 720 to 1.6, 1080 to 3.0)
+
         val audio = AudioKind.entries.map { k ->
-            SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", label, true)
+            SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", est(k.kbps * 125L * totalSec), true)
         }
-        val video = listOf(360, 480, 720, 1080).map { SheetRow("V:$it", "${it}p", null, label, false) }
-        sheet = SheetUi.Ready(
-            SheetData(
-                title = title, thumb = videos.firstOrNull()?.thumb, domain = "youtube.com",
-                fromClipboard = false, audio = audio, video = video,
-                preselect = pickPreselect(audio, video),
-            ) { choice ->
-                Prefs.lastChoice = choice
-                val specs = videos.mapIndexed { i, v ->
-                    Spec(
-                        "yt", v.url, v.title, v.thumb, v.durationSec, choice,
-                        prefix = String.format("%02d - ", positions.getOrElse(i) { i + 1 }),
-                    )
-                }
-                enqueue(specs)
+        val video = typicalMbps.map { (h, m) -> SheetRow("V:$h", "${h}p", null, est((m * 125_000 * totalSec).toLong()), false) }
+        val data = SheetData(
+            title = title, thumb = videos.firstOrNull()?.thumb, domain = domain,
+            fromClipboard = false, audioInit = audio, videoInit = video,
+            preselect = pickPreselect(audio, video),
+        ) { choice ->
+            Prefs.lastChoice = choice
+            val specs = videos.mapIndexed { i, v ->
+                Spec(
+                    "yt", v.url, v.title, v.thumb, v.durationSec, choice,
+                    prefix = String.format("%02d - ", positions.getOrElse(i) { i + 1 }),
+                    uploader = v.uploader,
+                )
             }
-        )
+            enqueue(specs)
+        }
+        sheet = SheetUi.Ready(data)
+
+        // Small selections get the real totals (the extraction is cached, so the downloads start faster too).
+        if (n <= 6) {
+            viewModelScope.launch {
+                val infos = coroutineScope {
+                    videos.map { v -> async { runCatching { YtRepo.stream(v.url) }.getOrNull() } }.map { it.await() }
+                }
+                if (infos.any { it == null }) return@launch
+                val ok = infos.filterNotNull()
+                data.audio = AudioKind.entries.map { k ->
+                    val total = ok.sumOf { i -> Formats.audioOptions(i).firstOrNull { it.kind == k }?.bytes ?: 0L }
+                    SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", est(total), true)
+                }
+                data.video = typicalMbps.map { (h, _) ->
+                    val total = ok.sumOf { i -> Formats.selectVideo(i, h)?.bytes ?: 0L }
+                    SheetRow("V:$h", "${h}p", null, est(total), false)
+                }
+            }
+        }
     }
 
     private fun downloadFacebook(url: String, fromClipboard: Boolean) {
@@ -283,7 +373,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         sheetJob = viewModelScope.launch {
             try {
                 val info = Facebook.fetch(url)
-                val (hdSize, sdSize) = coroutineScope {
+                val (hdSize, sdSize) = if (Facebook.bestReps(info).isNotEmpty() && info.dashAudio != null) (-1L to -1L) else coroutineScope {
                     val h = info.hdUrl?.let { async { Facebook.probeSize(it) } }
                     val s = info.sdUrl?.let { async { Facebook.probeSize(it) } }
                     (h?.await() ?: -1L) to (s?.await() ?: -1L)
@@ -296,16 +386,26 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                     )
                 }
                 val video = ArrayList<SheetRow>()
-                if (info.sdUrl != null) video.add(SheetRow("F:SD", "SD", null, Fmt.size(sdSize), false))
-                if (info.hdUrl != null) video.add(SheetRow("F:HD", "HD", null, Fmt.size(hdSize), false))
+                val reps = Facebook.bestReps(info)
+                val dashAudio = info.dashAudio
+                if (reps.isNotEmpty() && dashAudio != null) {
+                    // Facebook's own "HD" file is capped at 720p; the real qualities come from its DASH streams.
+                    for ((h, r) in reps) {
+                        val bytes = (r.bandwidth + dashAudio.bandwidth) / 8 * info.durationSec
+                        video.add(SheetRow("F:D$h", "${h}p", null, if (bytes > 0) "≈ " + Fmt.size(bytes) else "", false))
+                    }
+                } else {
+                    if (info.sdUrl != null) video.add(SheetRow("F:SD", "SD", null, Fmt.size(sdSize), false))
+                    if (info.hdUrl != null) video.add(SheetRow("F:HD", "HD", null, Fmt.size(hdSize), false))
+                }
                 sheet = SheetUi.Ready(
                     SheetData(
                         title = info.title, thumb = info.thumb, domain = "facebook.com",
-                        fromClipboard = fromClipboard, audio = audio, video = video,
+                        fromClipboard = fromClipboard, audioInit = audio, videoInit = video,
                         preselect = pickPreselect(audio, video),
                     ) { choice ->
                         Prefs.lastChoice = choice
-                        enqueue(listOf(Spec("fb", info.pageUrl, info.title, info.thumb, info.durationSec, choice)))
+                        enqueue(listOf(Spec("fb", info.pageUrl, info.title, info.thumb, info.durationSec, choice, uploader = "Facebook")))
                         if (fromClipboard) dismissClip()
                     }
                 )
@@ -313,7 +413,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Throwable) {
                 sheet = null
-                say(YtRepo.friendly(e))
+                if (e is Facebook.FbException && e.loginNeeded) fbLoginPrompt = true
+                else say(YtRepo.friendly(e))
             }
         }
     }
@@ -345,6 +446,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        const val CLIP_TTL_MS = 10 * 60 * 1000L
         const val MP3_SUB = "Compatible with Bluetooth speakers, phones, car stereos, smartwatches"
     }
 }

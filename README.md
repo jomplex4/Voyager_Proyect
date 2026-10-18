@@ -4,6 +4,101 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.14
+
+- Facebook: si la sesión guardada está caducada y la página sale vacía, la app la borra sola (una vez) y empieza el login desde la página simple.
+
+## Versión 2.13
+
+- Facebook: el login empieza en la página simple (la que funciona en este teléfono); si la sesión guardada caducó, vuelve a ese login en vez de quedarse en blanco. Tras entrar, la web normal.
+- La página termina en el borde de la barra de navegación del teléfono.
+- Al salir se borran el caché y los datos web de Facebook (no la sesión), para que "datos de usuario" no crezca.
+
+## Versión 2.12
+
+- Carpetas: `Voyager/Voyager video`, `Voyager/Voyager music` y `Voyager/Voyager photo`. Lo descargado antes queda donde estaba.
+- Facebook sin conexión ahora dice "No connection" en vez de pedir iniciar sesión.
+
+## Versión 2.11
+
+- **Facebook a pantalla completa:** sin barra superior, sin textos ni barra inferior; solo una flecha redonda arriba a la izquierda para salir. La pantalla no se apaga mientras estés en esa página.
+- **Botón de descarga:** en la página de un reel o video hay un solo botón a la derecha (lejos del aviso "Abrir aplicación") que baja el video que se ve en pantalla, nunca la foto de portada. En el inicio, cada video tiene su botón y las fotos normales el suyo. Después de cada toque se ignoran los toques durante 2,5 segundos, y una foto no se guarda dos veces.
+- **Velocidad:** la lista de formatos y el arranque de la descarga de Facebook ya no leen la página dos veces; las dos versiones de la página se piden a la vez y el resultado se guarda 10 minutos.
+- **Caché:** al salir de Facebook, si el caché del teléfono pasa de 20 MB se vacía el caché web (la sesión se conserva).
+
+## Versión 2.10
+
+- **Facebook, pantalla en blanco:** el WebView del teléfono (versión 154) es moderno; el problema era mi identidad personalizada del navegador y un detector que contaba texto escondido. Ahora usa la identidad normal del WebView y detecta si hay un campo de inicio de sesión realmente visible. Si no lo hay a los 9 segundos, prueba el siguiente modo: dibujo por software, página de escritorio, página simple. El botón "Mode" (arriba) cambia de modo a mano. La línea de estado muestra el modo, la versión de WebView y el último error de la página.
+
+## Versión 2.9
+
+- **Facebook, pantalla en blanco al iniciar sesión:** si la página se queda en blanco, la app prueba otras 3 páginas de acceso de Facebook (simple, gratuita y táctil, y la de escritorio) una tras otra. La línea de estado muestra la versión del WebView del teléfono. Si ninguna se dibuja, aparece el botón "Update WebView in Play Store": en teléfonos con WebView antiguo es la única forma de que Facebook se vea dentro de una app.
+
+## Versión 2.8
+
+- **Facebook, calidades reales:** el archivo "HD" que entrega Facebook está limitado a 720p. Las calidades altas (1080p, 1440p, etc.) solo vienen en sus streams DASH (video y audio por separado). Ahora la lista muestra todas esas calidades con su peso estimado y las descarga mezclando video y audio. Si la página no trae esos streams, queda la lista anterior (SD y HD).
+- El título ya no incluye el "31K views · 334 reactions |" del inicio.
+
+## Versión 2.7
+
+- **Facebook:** el acceso empieza en la página simple (HTML sin scripts modernos), que funciona en cualquier WebView, y después pasa a la versión completa. Una línea de estado bajo el título muestra "Loading %", o el motivo exacto si algo falla.
+- **Pantalla completa:** el video se amplía para llenar toda la pantalla (recorta lo que sobra, sin franjas negras) y también cubre la zona de la cámara frontal.
+- **Reproductor:** botones 15% más pequeños; en lugar de anterior/siguiente hay retroceder y adelantar 10 segundos.
+- **Continuar:** el punto guardado se borra solo cuando terminas el video (o llegas a sus últimos 10 segundos); mientras lo ves por partes se conserva.
+
+## Versión 2.6
+
+- **Calidad de la vista previa de YouTube:** botón arriba a la derecha del video (por ejemplo "360p") para elegir cualquier calidad disponible; cambia sin perder el punto donde vas.
+- **Pantalla completa:** botón del reproductor (también muestra el selector de calidad).
+- **Continuar donde lo dejaste:** en videos de más de 10 minutos que no terminaste, se guarda el punto cada pocos segundos y, al abrirlos otra vez, continúan desde ahí. Al terminarlos se borra el punto. Se recuerdan los últimos 60.
+
+## Versión 2.5
+
+- **Facebook:** al iniciar sesión se abre la interfaz normal de Facebook (inicio, páginas, canales, búsqueda) con un botón rojo de descarga sobre cada video, reel y foto. Los videos pasan por la lista de formatos; las fotos se guardan en la carpeta Voyager. Si la pantalla se queda en blanco, a los 12 segundos cambia sola a la página de acceso ligera.
+- **Pantalla:** durante la vista previa de YouTube en primer plano no se apaga; en segundo plano sí se apaga con el tiempo normal del teléfono.
+- **Reproductor:** botones 40% más grandes que en la 2.4.
+
+## Versión 2.4
+
+- La vista previa de YouTube ya no reinicia la carga al salir de la app y volver: antes, al volver, la app reconfiguraba el reproductor y este descartaba lo ya cargado.
+
+## Versión 1.2.2: abrir archivos en tu reproductor
+
+- Al tocar un archivo descargado, VOYAGER lo abre en tu reproductor como una app aparte (su propia ventana en recientes), no dentro de VOYAGER.
+- El reproductor recibe la dirección permanente del archivo (la misma que usan las galerías y los reproductores de música), en vez de un permiso temporal. Antes, al salir del reproductor el permiso se cancelaba mientras el reproductor seguía activo, y al terminar la canción intentaba reabrir el archivo sin permiso, fallaba y reintentaba sin parar, lo que calentaba y laggeaba el teléfono.
+- Nota: cortar la reproducción y borrar la notificación al salir con la flecha es una decisión del reproductor, no de VOYAGER.
+
+## Versión 1.2.1: correcciones urgentes
+
+- **Notificación de reproducción:** ahora sí aparece la notificación estándar de Android al reproducir una vista previa de YouTube en segundo plano. Antes la sesión de reproducción no se registraba y Android no la mostraba.
+- **Sin notificación de descarga:** el canal visible de la versión 1.0.0 seguía instalado en el teléfono (Android no deja cambiar un canal ya creado). Ahora se borra y se usa uno nuevo y bloqueado. Además la notificación interna ya no se redibuja varias veces por segundo, que era lo que más cargaba al sistema.
+- **Teléfono lento y caliente:** el mezclado de video y la conversión a MP3 corren con prioridad baja para no competir con la pantalla y los botones del sistema. Se agregaron guardas contra descargas o conversiones que se queden "pegadas" y contra un indicador de carga que no terminaba.
+- **Reproductor:** botones exactamente un 20% más grandes.
+
+## Versión 1.2.0: lo nuevo
+
+- **Facebook con tu cuenta:** el ícono de persona (arriba, junto a la lupa) abre el inicio de sesión de Facebook dentro de la app. Es la página normal de Facebook: VOYAGER no ve tu contraseña, la sesión queda guardada solo en el teléfono y se usa únicamente para abrir videos que tu cuenta ya puede ver (privados, de amigos, de grupos). Si intentas descargar un video privado sin sesión, la app te lo pide sola. Se cierra con "Log out". El enlace al video solo se envía a facebook.com y a nadie más.
+- **Notificación:** solo la de reproducción de la vista previa de YouTube en segundo plano (la notificación multimedia estándar de Android). Las descargas siguen sin mostrar nada. En Android 13 o más la app pide el permiso de notificaciones una sola vez, la primera vez que reproduces una vista previa.
+- **Descargas:** el límite de 2 aplica solo a las que están DESCARGANDO. Las que se están procesando (mezclando o convirtiendo) no tienen límite y no bloquean la fila.
+- **Reproductor:** botones más pequeños, controles más discretos y menos capa oscura sobre el video.
+- **Portada:** el mensaje vacío está centrado; los links copiados desaparecen a los 10 minutos y solo se detectan links de YouTube y Facebook.
+- **Archivos enormes:** no hay ningún límite de tamaño. Videos de 6, 10 o más GB funcionan si el teléfono tiene espacio libre: se necesita aproximadamente el doble del tamaño del video mientras se mezcla.
+
+## Versión 1.1.x: qué cambió
+
+- **Carpeta propia:** todo se guarda en `Voyager` (almacenamiento interno, raíz). La primera vez la app muestra una pantalla pidiendo "Acceso a todos los archivos"; es el único permiso que existe en Android para crear una carpeta en la raíz. Los archivos parciales van a `Voyager/.tmp` (oculta), así que los datos de la app ya no crecen.
+- **Sin notificaciones de descarga:** Android obliga a tener un servicio para que las descargas sigan con la pantalla apagada, pero ahora usa un canal bloqueado y no muestra nada. Solo queda la notificación multimedia cuando reproduces una vista previa.
+- **Calidades de video corregidas:** los videos panorámicos (cine) aparecían como 536p, 804p, 1072p. Ahora se etiquetan como YouTube (360p, 480p, 720p, 1080p, 1440p, 2160p).
+- **Portada y datos en el audio:** MP3 y M4A llevan portada, título, artista (el canal) y álbum (el canal).
+- **Más rápido:** video y audio se descargan a la vez, se mueve el archivo sin copiarlo, la extracción de YouTube se reutiliza, Facebook deja de leer la página en cuanto encuentra el video.
+- **Sugerencias de búsqueda** mientras escribes.
+- **Listas y cursos:** muestra el peso total de la selección (exacto hasta 6 videos, estimado si son más).
+- **Descargas:** 2 a la vez, el resto en espera. Al procesar ya no se puede pausar (así no se repite el trabajo). Botones más pequeños y mejor ubicados; "Pause all" arriba. Los audios muestran el disco de vinilo desde que empiezan.
+- **Portada limpia:** arriba el logo de DIGITALMINDS y la lupa; la barra de búsqueda aparece al tocar la lupa. Todo el espacio de abajo es la lista de links copiados de YouTube y Facebook (hasta 30, con su botón Download y una X para quitarlos).
+- **Ícono** con más negro, conservando los difuminados.
+
+Las descargas de la versión 1.0.0 siguen apareciendo en Play (están en Música/VOYAGER y Películas/VOYAGER). Se instala encima sin perder nada.
+
 ## 1. Descomprimir y abrir en VS Code
 
 1. Crea una carpeta nueva, por ejemplo `C:\Proyectos\VOYAGER`.
@@ -41,8 +136,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2.14
+git push origin v2.14
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -68,7 +163,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v1.0.1`, `git push origin v1.0.1`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.14`, `git push origin v2.14`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

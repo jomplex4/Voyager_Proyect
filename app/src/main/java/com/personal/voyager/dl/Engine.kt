@@ -77,7 +77,11 @@ class Fetcher(
             val end = if (total > 0) minOf(have + CHUNK, total) - 1 else -1L
             try {
                 val sawEof = requestChunk(file, have, end, onTick)
-                failures = 0
+                if (total > 0 && file.length() <= have) {
+                    // The server answered but sent nothing: back off instead of asking again at full speed.
+                    if (++failures > 3) throw IOException("The server returned no data")
+                    delay(500L * failures * failures)
+                } else failures = 0
                 if (total <= 0 && sawEof) break
             } catch (e: HttpStatusException) {
                 currentCoroutineContext().ensureActive()

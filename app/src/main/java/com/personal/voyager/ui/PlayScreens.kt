@@ -1,6 +1,7 @@
 package com.personal.voyager.ui
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -52,28 +53,37 @@ import com.personal.voyager.dl.DlJob
 import com.personal.voyager.dl.DoneItem
 import com.personal.voyager.dl.Downloads
 import com.personal.voyager.dl.JobStatus
+import com.personal.voyager.dl.Storage
 import com.personal.voyager.dl.Store
 import com.personal.voyager.vm.AppViewModel
 import com.personal.voyager.vm.Screen
 import java.io.File
 
+/**
+ * Opens the file in the user's player as ITS OWN task (so leaving the player returns here and it is not stuck
+ * inside this app), using the permanent MediaStore address (so the player can reopen it later without any
+ * temporary permission).
+ */
 private fun openFile(ctx: Context, d: DoneItem) {
-    val uri = Uri.parse(d.uri)
-    val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, d.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    try {
-        ctx.startActivity(view)
-    } catch (e: ActivityNotFoundException) {
+    Storage.resolveUri(ctx, d.uri, d.mime) { uri ->
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, d.mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        view.clipData = ClipData.newRawUri("", uri)
         try {
-            ctx.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e2: Exception) {
-            Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
+            ctx.startActivity(view)
+        } catch (e: ActivityNotFoundException) {
+            try {
+                ctx.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e2: Exception) {
+                Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }
 
 private fun shareFile(ctx: Context, d: DoneItem) {
     val send = Intent(Intent.ACTION_SEND).setType(d.mime)
-        .putExtra(Intent.EXTRA_STREAM, Uri.parse(d.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .putExtra(Intent.EXTRA_STREAM, Storage.uriFor(ctx, d.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     runCatching { ctx.startActivity(Intent.createChooser(send, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
@@ -108,14 +118,17 @@ fun JobRow(
     Row(
         modifier.fillMaxWidth()
             .then(if (selectable) Modifier.clickable(onClick = onToggleSelect) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (selectable) {
             CheckDot(selected)
             Spacer(Modifier.width(12.dp))
         }
-        Thumb(job.thumb, Modifier.size(width = 96.dp, height = 60.dp), RoundedCornerShape(8.dp))
+        Box(Modifier.size(width = 96.dp, height = 60.dp), contentAlignment = Alignment.Center) {
+            if (job.isAudio) VinylThumb(job.thumb, 60.dp)
+            else Thumb(job.thumb, Modifier.fillMaxSize(), RoundedCornerShape(8.dp))
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(job.base, style = Txt.Row, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -141,16 +154,24 @@ fun JobRow(
             }
         }
         if (showControls && !selectable) {
-            Spacer(Modifier.width(6.dp))
-            val (icon, action) = when (job.status) {
-                JobStatus.ACTIVE, JobStatus.PROCESSING, JobStatus.QUEUED -> R.drawable.ic_pause to { Downloads.pause(job.id) }
-                JobStatus.PAUSED -> R.drawable.ic_play to { Downloads.resume(job.id) }
-                JobStatus.FAILED -> R.drawable.ic_refresh to { Downloads.retry(job.id) }
+            Spacer(Modifier.width(14.dp))
+            if (job.status == JobStatus.PROCESSING) {
+                // Nothing to tap while merging or encoding: pausing there would redo the work.
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(color = Pal.Red, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                }
+            } else {
+                val (icon, action) = when (job.status) {
+                    JobStatus.PAUSED -> R.drawable.ic_play to { Downloads.resume(job.id) }
+                    JobStatus.FAILED -> R.drawable.ic_refresh to { Downloads.retry(job.id) }
+                    else -> R.drawable.ic_pause to { Downloads.pause(job.id) }
+                }
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).border(1.5.dp, Pal.Gray, CircleShape).clickable(onClick = action),
+                    contentAlignment = Alignment.Center,
+                ) { Ic(icon, tint = Pal.White, size = 16.dp) }
             }
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).border(2.dp, Pal.White, CircleShape).clickable(onClick = action),
-                contentAlignment = Alignment.Center,
-            ) { Ic(icon, size = 20.dp) }
+            Spacer(Modifier.width(4.dp))
         }
     }
 }
@@ -205,7 +226,7 @@ fun PlayHomeScreen(vm: AppViewModel) {
                     Text("Downloading (${jobs.size})", style = Txt.Title, modifier = Modifier.weight(1f))
                     Ic(R.drawable.ic_chevron_right, tint = Pal.Gray)
                 }
-                JobRow(jobs.first())
+                JobRow(jobs.last(), showControls = false)
             }
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
@@ -309,14 +330,9 @@ fun PlayHomeScreen(vm: AppViewModel) {
 @Composable
 private fun DoneThumb(d: DoneItem) {
     val model: Any? = d.thumbPath?.let { File(it) }
-    if (d.isAudio) {
-        Box(Modifier.size(width = 96.dp, height = 60.dp).clip(RoundedCornerShape(8.dp)).background(Pal.Card), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(54.dp).clip(CircleShape).border(7.dp, Color(0xFF2A2B2E), CircleShape)) {
-                Thumb(model, Modifier.fillMaxSize(), CircleShape)
-            }
-        }
-    } else {
-        Thumb(model, Modifier.size(width = 96.dp, height = 60.dp), RoundedCornerShape(8.dp))
+    Box(Modifier.size(width = 96.dp, height = 60.dp), contentAlignment = Alignment.Center) {
+        if (d.isAudio) VinylThumb(model, 60.dp)
+        else Thumb(model, Modifier.fillMaxSize(), RoundedCornerShape(8.dp))
     }
 }
 
@@ -350,20 +366,17 @@ fun DownloadingScreen(vm: AppViewModel) {
                 Text("Select all", style = Txt.Body)
             }
         } else {
-            TopBar("Downloading", { vm.pop() }) {
-                IconTap(R.drawable.ic_delete, { deleteMode = true; selected.clear() })
-            }
             val anyRunning = jobs.any { it.status != JobStatus.PAUSED && it.status != JobStatus.FAILED }
-            Row(
-                Modifier.fillMaxWidth().clickable { if (anyRunning) Downloads.pauseAll() else Downloads.resumeAll() }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(40.dp).clip(CircleShape).border(2.dp, Pal.White, CircleShape), contentAlignment = Alignment.Center) {
-                    Ic(if (anyRunning) R.drawable.ic_pause else R.drawable.ic_play, size = 20.dp)
+            TopBar("Downloading", { vm.pop() }) {
+                if (jobs.isNotEmpty()) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(Pal.Card2)
+                            .clickable { if (anyRunning) Downloads.pauseAll() else Downloads.resumeAll() }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) { Text(if (anyRunning) "Pause all" else "Resume all", style = Txt.Label.copy(color = Pal.White)) }
+                    Spacer(Modifier.width(6.dp))
                 }
-                Spacer(Modifier.width(14.dp))
-                Text(if (anyRunning) "Pause all" else "Resume all", style = Txt.Body)
+                IconTap(R.drawable.ic_delete, { deleteMode = true; selected.clear() })
             }
         }
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Smaller, quieter player controls (same layout Media3 ships, only measures and colors change). -->
+    <dimen name="exo_icon_size">57.12dp</dimen>
+    <dimen name="exo_icon_horizontal_margin">14.28dp</dimen>
+    <dimen name="exo_icon_padding">8.57dp</dimen>
+    <dimen name="exo_small_icon_width">51.41dp</dimen>
+    <dimen name="exo_small_icon_height">51.41dp</dimen>
+    <dimen name="exo_small_icon_horizontal_margin">0dp</dimen>
+    <dimen name="exo_small_icon_padding_horizontal">12.85dp</dimen>
+    <dimen name="exo_small_icon_padding_vertical">12.85dp</dimen>
+    <dimen name="exo_styled_bottom_bar_height">51.41dp</dimen>
+    <dimen name="exo_styled_bottom_bar_margin_top">0dp</dimen>
+    <dimen name="exo_styled_bottom_bar_time_padding">8dp</dimen>
+    <dimen name="exo_styled_progress_layout_height">39.98dp</dimen>
+    <dimen name="exo_styled_progress_touch_target_height">51.41dp</dimen>
+    <dimen name="exo_styled_progress_margin_bottom">42.84dp</dimen>
+    <dimen name="exo_styled_progress_bar_height">2dp</dimen>
+    <dimen name="exo_styled_progress_enabled_thumb_size">8dp</dimen>
+    <dimen name="exo_styled_progress_dragged_thumb_size">12dp</dimen>
+    <dimen name="exo_styled_minimal_controls_margin_bottom">2dp</dimen>
+    <color name="exo_black_opacity_60">#38000000</color>
+    <color name="exo_bottom_bar_background">#40000000</color>
+</resources>

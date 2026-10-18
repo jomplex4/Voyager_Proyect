@@ -1,6 +1,9 @@
 package com.personal.voyager.ui
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import android.widget.Toast
@@ -16,9 +19,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +39,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.personal.voyager.R
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.personal.voyager.dl.Downloads
+import com.personal.voyager.dl.Storage
 import com.personal.voyager.vm.AppViewModel
 import com.personal.voyager.vm.Screen
 import com.personal.voyager.vm.SheetUi
@@ -55,10 +64,58 @@ fun VoyagerRoot(vm: AppViewModel) {
         if (left > 0) delay(left)
         ready = true
     }
+    val granted = rememberStorageGranted()
+    LaunchedEffect(granted) { if (granted) Storage.prepare() }
     if (!ready) {
         SplashScreen()
+    } else if (!granted) {
+        StorageGate()
     } else {
         AppRoot(vm)
+    }
+}
+
+@Composable
+private fun rememberStorageGranted(): Boolean {
+    var granted by remember { mutableStateOf(Storage.granted()) }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) granted = Storage.granted() }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    return granted
+}
+
+/** One-time screen: Android only lets an app create a folder in the main storage with "All files access". */
+@Composable
+private fun StorageGate() {
+    val ctx = LocalContext.current
+    Column(
+        Modifier.fillMaxSize().background(Pal.Black).statusBarsPadding().navigationBarsPadding()
+            .padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+    ) {
+        LogoTile(88.dp)
+        androidx.compose.foundation.layout.Spacer(Modifier.height(28.dp))
+        Text("One quick step", style = Txt.Title)
+        androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+        Text(
+            "VOYAGER saves everything in its own folder called Voyager, so your music and video player can find it. " +
+                "Android asks you to allow \"All files access\" once.",
+            style = Txt.Body.copy(color = Pal.Gray),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.height(28.dp))
+        PillButton("Allow access", {
+            val pkg = Uri.parse("package:" + ctx.packageName)
+            try {
+                ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, pkg))
+            } catch (e: Exception) {
+                runCatching { ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+            }
+        }, Modifier.fillMaxWidth())
     }
 }
 
@@ -77,6 +134,12 @@ private fun AppRoot(vm: AppViewModel) {
         val a = activity ?: return@LaunchedEffect
         a.requestedOrientation =
             if (fs) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Fullscreen also covers the camera notch area (it stays black otherwise).
+        val lp = a.window.attributes
+        lp.layoutInDisplayCutoutMode =
+            if (fs) android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        a.window.attributes = lp
         val c = WindowCompat.getInsetsController(a.window, a.window.decorView)
         if (fs) {
             c.hide(WindowInsetsCompat.Type.systemBars())
@@ -110,9 +173,36 @@ private fun AppRoot(vm: AppViewModel) {
                 is Screen.Playlist -> PlaylistScreen(vm, s)
                 is Screen.PlayHome -> PlayHomeScreen(vm)
                 is Screen.Downloading -> DownloadingScreen(vm)
+                is Screen.Facebook -> FacebookScreen(vm)
             }
         }
-        if (!fs && !imeVisible) BottomBar(vm)
+        if (!fs && !imeVisible && vm.current !is Screen.Facebook) BottomBar(vm)
+    }
+
+    if (vm.fbLoginPrompt) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.fbLoginPrompt = false },
+            containerColor = Pal.Card2,
+            title = { Text("Log in to Facebook", style = Txt.Title) },
+            text = {
+                Text(
+                    "This video is private or needs an account. Log in once and VOYAGER can download the videos you are allowed to watch.",
+                    style = Txt.Body.copy(color = Pal.Gray),
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    vm.fbLoginPrompt = false
+                    vm.tab = Tab.DOWNLOAD
+                    vm.push(Screen.Facebook)
+                }) { Text("Log in", style = Txt.Label.copy(color = Pal.RedBright)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { vm.fbLoginPrompt = false }) {
+                    Text("Not now", style = Txt.Label.copy(color = Pal.White))
+                }
+            },
+        )
     }
 
     when (val sh = vm.sheet) {

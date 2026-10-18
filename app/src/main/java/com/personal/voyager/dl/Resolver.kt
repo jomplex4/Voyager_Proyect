@@ -8,6 +8,7 @@ import com.personal.voyager.yt.LiveStreamException
 import com.personal.voyager.yt.NoStreamException
 import com.personal.voyager.yt.YtRepo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.stream.Stream
@@ -16,8 +17,8 @@ import org.schabi.newpipe.extractor.stream.StreamType
 /** Turns a queued job into concrete URLs. Called again when stream URLs expire. */
 object Resolver {
 
-    suspend fun resolve(job: DlJob, allowWebm: Boolean = true): Plan = withContext(Dispatchers.IO) {
-        if (job.source == "fb") resolveFb(job) else resolveYt(job, allowWebm)
+    suspend fun resolve(job: DlJob, allowWebm: Boolean = true, fresh: Boolean = false): Plan = withContext(Dispatchers.IO) {
+        if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
     }
 
     private fun ytUa(url: String): String =
@@ -29,8 +30,8 @@ object Resolver {
         return Src(s.content, size, "${s.id}:$size", ytUa(s.content))
     }
 
-    private suspend fun resolveYt(job: DlJob, allowWebm: Boolean): Plan {
-        val info = YtRepo.stream(job.url)
+    private suspend fun resolveYt(job: DlJob, allowWebm: Boolean, fresh: Boolean): Plan {
+        val info = YtRepo.stream(job.url, fresh)
         if (info.streamType == StreamType.LIVE_STREAM || info.streamType == StreamType.AUDIO_LIVE_STREAM) {
             throw LiveStreamException()
         }
@@ -57,8 +58,8 @@ object Resolver {
         return Plan.Merge(src(sel.video!!), src(sel.audio!!), sel.webm, tag)
     }
 
-    private suspend fun resolveFb(job: DlJob): Plan {
-        val info = Facebook.fetch(job.url)
+    private suspend fun resolveFb(job: DlJob, fresh: Boolean): Plan {
+        val info = Facebook.fetch(job.url, fresh)
         val choice = job.choice
         fun mk(url: String, size: Long) = Src(url, size, "fb:$size", Net.UA_CHROME)
 
@@ -68,7 +69,23 @@ object Resolver {
             val s = mk(url, Facebook.probeSize(url))
             return if (kind.mp3) Plan.Mp3(s, kind.kbps, kind.tag) else Plan.M4a(s, kind.tag)
         }
+        if (choice.startsWith("F:D")) {
+            val h = choice.removePrefix("F:D").toIntOrNull() ?: 0
+            val reps = Facebook.bestReps(info)
+            val pick = reps.filter { it.first <= h }.maxByOrNull { it.first } ?: reps.minByOrNull { it.first }
+            val a = info.dashAudio
+            if (pick != null && a != null) {
+                val v = pick.second
+                val (vs, asz) = kotlinx.coroutines.coroutineScope {
+                    val x = async { Facebook.probeSize(v.url) }
+                    val y = async { Facebook.probeSize(a.url) }
+                    x.await() to y.await()
+                }
+                return Plan.Merge(mk(v.url, vs), mk(a.url, asz), false, "${pick.first}P")
+            }
+        }
         val wantHd = choice == "F:HD"
+
         val url = (if (wantHd) info.hdUrl ?: info.sdUrl else info.sdUrl ?: info.hdUrl)
             ?: throw Facebook.FbException(Facebook.NOT_AVAILABLE)
         val tag = if (url == info.hdUrl) "HD" else "SD"

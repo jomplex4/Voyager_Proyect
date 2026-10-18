@@ -3,12 +3,25 @@ package com.personal.voyager.fb
 import android.net.Uri
 import android.text.Html
 import com.personal.voyager.core.Net
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
+import okio.Buffer
 import java.io.IOException
+import java.net.URLDecoder
 
-/** Public Facebook videos only (no login). Isolated here because Facebook changes its pages often. */
+/**
+ * Facebook videos. Public ones work without an account; private or friends-only ones use the account the user
+ * logged in with (cookie from the in-app WebView). Isolated here because Facebook changes its pages often.
+ */
 object Facebook {
     class Info(
         val pageUrl: String,
@@ -17,52 +30,182 @@ object Facebook {
         val hdUrl: String?,
         val sdUrl: String?,
         val durationSec: Long,
+        val dashVideos: List<Rep> = emptyList(),
+        val dashAudio: Rep? = null,
     )
 
-    class FbException(msg: String) : Exception(msg)
+    /** One stream of Facebook's DASH manifest (separate video or audio file). */
+    class Rep(val width: Int, val height: Int, val bandwidth: Long, val url: String, val codecs: String)
 
-    const val NOT_AVAILABLE = "This video is private, needs login, or is not supported."
+    private val STANDARD = intArrayOf(144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
 
-    private val hdKeys = listOf("playable_url_quality_hd", "browser_native_hd_url", "hd_src_no_ratelimit", "hd_src")
-    private val sdKeys = listOf("playable_url", "browser_native_sd_url", "sd_src_no_ratelimit", "sd_src")
-
-    suspend fun fetch(inputUrl: String): Info = withContext(Dispatchers.IO) {
-        val first = tryFetch(inputUrl, Net.UA_CHROME)
-        if (first != null) return@withContext first
-        val second = tryFetch(mobileVariant(inputUrl), Net.UA_MOBILE)
-        second ?: throw FbException(NOT_AVAILABLE)
+    /** Quality label like YouTube shows it (a 1920x804 wide video is 1080p). */
+    private fun label(w: Int, h: Int): Int {
+        val eff = if (w <= 0) h else if (w >= h) maxOf(h, Math.round(w * 9f / 16f)) else w
+        val best = STANDARD.minByOrNull { Math.abs(it - eff) } ?: eff
+        return if (Math.abs(best - eff) <= best * 0.08) best else eff
     }
 
-    private fun mobileVariant(url: String): String = runCatching {
+    /** Best H.264 stream for every quality, ascending: (label, stream). */
+    fun bestReps(info: Info): List<Pair<Int, Rep>> =
+        info.dashVideos.groupBy { label(it.width, it.height) }.mapNotNull { (h, list) ->
+            val pick = list.filter { it.codecs.startsWith("avc1") }.maxByOrNull { it.bandwidth } ?: return@mapNotNull null
+            h to pick
+        }.sortedBy { it.first }
+
+    private fun parseDash(html: String): Triple<List<Rep>, Rep?, Long> {
+        val m = Regex("\"dash_manifest\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(html)
+            ?: return Triple(emptyList(), null, 0L)
+        val xml = unescape(m.groupValues[1]).replace("\\\"", "\"").replace("\\n", "\n")
+        val videos = ArrayList<Rep>()
+        var audio: Rep? = null
+        val attr = Regex("(\\w+)=\"([^\"]*)\"")
+        for (r in Regex("<Representation\\b([^>]*)>(.*?)</Representation>", RegexOption.DOT_MATCHES_ALL).findAll(xml)) {
+            val a = attr.findAll(r.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
+            val url = Regex("<BaseURL>(.*?)</BaseURL>", RegexOption.DOT_MATCHES_ALL).find(r.groupValues[2])
+                ?.groupValues?.get(1)?.trim()?.replace("&amp;", "&") ?: continue
+            if (!url.startsWith("http")) continue
+            val bw = a["bandwidth"]?.toLongOrNull() ?: 0L
+            val codecs = a["codecs"] ?: ""
+            val h = a["height"]?.toIntOrNull()
+            if (h != null) {
+                videos.add(Rep(a["width"]?.toIntOrNull() ?: 0, h, bw, url, codecs))
+            } else if (audio == null || bw > audio.bandwidth) {
+                audio = Rep(0, 0, bw, url, codecs)
+            }
+        }
+        val d = Regex("mediaPresentationDuration=\"PT(?:(\\d+)H)?(?:(\\d+)M)?(?:([\\d.]+)S)?\"").find(xml)
+        val secs = if (d == null) 0L else
+            (d.groupValues[1].toLongOrNull() ?: 0L) * 3600 + (d.groupValues[2].toLongOrNull() ?: 0L) * 60 +
+                (d.groupValues[3].toDoubleOrNull()?.toLong() ?: 0L)
+        return Triple(videos, audio, secs)
+    }
+
+    class FbException(msg: String, val loginNeeded: Boolean = false) : Exception(msg)
+
+    const val NOT_AVAILABLE = "This Facebook video is not available for your account, or Facebook changed its page."
+    const val LOGIN_NEEDED = "This Facebook video is private or needs an account."
+
+    private val hdKeys = listOf(
+        "playable_url_quality_hd", "browser_native_hd_url", "hd_src_no_ratelimit", "hd_src", "hd_url", "video_hd_url",
+    )
+    private val sdKeys = listOf(
+        "playable_url", "browser_native_sd_url", "sd_src_no_ratelimit", "sd_src", "sd_url", "video_sd_url",
+    )
+
+    /** The cookie is only ever sent to facebook.com hosts, even if a redirect points somewhere else. */
+    private val client: OkHttpClient by lazy {
+        Net.client.newBuilder().addNetworkInterceptor { chain ->
+            val req = chain.request()
+            if (req.url.host.endsWith("facebook.com")) chain.proceed(req)
+            else chain.proceed(req.newBuilder().removeHeader("Cookie").build())
+        }.build()
+    }
+
+    private val infoCache = LinkedHashMap<String, Pair<Long, Info>>()
+    private val fetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * The desktop and the mobile page are requested at the same time and the first answer wins (a bad connection no
+     * longer waits for one page and then the other). If that answer has no DASH qualities the other one gets 4 more
+     * seconds. Results are kept for 10 minutes, so choosing a format and starting the download do not read the page twice.
+     */
+    suspend fun fetch(inputUrl: String, fresh: Boolean = false): Info {
+        val now = System.currentTimeMillis()
+        if (!fresh) {
+            val hit = synchronized(infoCache) { infoCache[inputUrl]?.takeIf { now - it.first < 10 * 60_000 } }
+            if (hit != null) return hit.second
+        }
+        var netError: Throwable? = null
+        val a = fetchScope.async { runCatching { parsePage(inputUrl, Net.UA_CHROME) }.onFailure { netError = it }.getOrNull() }
+        val b = fetchScope.async { runCatching { parsePage(mobileVariant(inputUrl), Net.UA_MOBILE) }.onFailure { netError = it }.getOrNull() }
+        val first = select<Pair<Info?, Deferred<Info?>>> {
+            a.onAwait { it to b }
+            b.onAwait { it to a }
+        }
+        var info: Info? = first.first ?: first.second.await()
+        if (info != null && info.dashVideos.isEmpty()) {
+            val o = withTimeoutOrNull(4000) { first.second.await() }
+            if (o != null && o.dashVideos.isNotEmpty()) info = o
+        }
+        if (info == null && FbSession.loggedIn()) {
+            info = withContext(Dispatchers.IO) { parseMbasic(inputUrl) }
+        }
+        if (info == null) {
+            netError?.let { throw it } // no connection: say so instead of asking to log in
+            throw if (FbSession.loggedIn()) FbException(NOT_AVAILABLE) else FbException(LOGIN_NEEDED, loginNeeded = true)
+        }
+        synchronized(infoCache) {
+            infoCache[inputUrl] = now to info
+            while (infoCache.size > 8) infoCache.remove(infoCache.keys.first())
+        }
+        return info
+    }
+
+    private fun mobileVariant(url: String): String = hostSwap(url, "m.facebook.com", setOf("www.facebook.com", "facebook.com", "web.facebook.com"))
+
+    private fun hostSwap(url: String, newHost: String, from: Set<String>): String = runCatching {
         val u = Uri.parse(url)
-        val h = u.host ?: return url
-        if (h == "www.facebook.com" || h == "facebook.com" || h == "web.facebook.com") {
-            u.buildUpon().authority("m.facebook.com").build().toString()
-        } else url
+        if ((u.host ?: "") in from) u.buildUpon().authority(newHost).build().toString() else url
     }.getOrDefault(url)
 
-    private fun tryFetch(url: String, ua: String): Info? {
-        val req = Request.Builder()
+    /** Returns (html, finalUrl) or null. */
+    private fun load(url: String, ua: String): Pair<String, String>? {
+        val b = Request.Builder()
             .url(url)
             .header("User-Agent", ua)
             .header("Accept-Language", "en-US,en;q=0.9")
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Sec-Fetch-Mode", "navigate")
-            .build()
-        Net.client.newCall(req).execute().use { r ->
+        val host = runCatching { Uri.parse(url).host ?: "" }.getOrDefault("")
+        if (host.endsWith("facebook.com") || host == "fb.watch") FbSession.cookie()?.let { b.header("Cookie", it) }
+        client.newCall(b.build()).execute().use { r ->
             if (!r.isSuccessful) return null
-            val html = r.body?.string() ?: return null
-            val finalUrl = r.request.url.toString()
-            val hd = hdKeys.firstNotNullOfOrNull { find(html, it) }
-            val sd = sdKeys.firstNotNullOfOrNull { find(html, it) }
-            if (hd == null && sd == null) return null
-            val title = meta(html, "og:title")?.takeIf { it.isNotBlank() && !it.equals("Facebook", true) }
-                ?: "Facebook ${idOf(finalUrl) ?: idOf(url) ?: "video"}"
-            val thumb = meta(html, "og:image")?.takeIf { it.startsWith("http") }
-            val dur = Regex("\"playable_duration_in_ms\"\\s*:\\s*(\\d+)").find(html)
-                ?.groupValues?.get(1)?.toLongOrNull()?.div(1000) ?: 0L
-            return Info(finalUrl, title, thumb, hd, sd, dur)
+            val html = readUseful(r.body ?: return null)
+            return html to r.request.url.toString()
         }
+    }
+
+    private fun parsePage(url: String, ua: String): Info? {
+        val (html, finalUrl) = load(url, ua) ?: return null
+        val hd = hdKeys.firstNotNullOfOrNull { find(html, it) }
+        val sd = sdKeys.firstNotNullOfOrNull { find(html, it) }
+        val (dashV, dashA, dashSecs) = parseDash(html)
+        if (hd == null && sd == null && dashV.isEmpty()) return null
+        val title = meta(html, "og:title")?.replace(Regex("^[\\d.,]+[KMB]? views\\s*·\\s*[\\d.,]+[KMB]? reactions\\s*\\|\\s*"), "")?.takeIf { it.isNotBlank() && !it.equals("Facebook", true) }
+            ?: "Facebook ${idOf(finalUrl) ?: idOf(url) ?: "video"}"
+        val thumb = meta(html, "og:image")?.takeIf { it.startsWith("http") }
+        val dur = Regex("\"playable_duration_in_ms\"\\s*:\\s*(\\d+)").find(html)
+            ?.groupValues?.get(1)?.toLongOrNull()?.div(1000) ?: 0L
+        return Info(finalUrl, title, thumb, hd, sd, if (dur > 0) dur else dashSecs, dashV, dashA)
+    }
+
+    /** Last resort for logged in accounts: the plain mobile site links the video file directly. */
+    private fun parseMbasic(url: String): Info? {
+        val u = hostSwap(url, "mbasic.facebook.com", setOf("www.facebook.com", "facebook.com", "web.facebook.com", "m.facebook.com"))
+        if (u == url) return null
+        val (html, finalUrl) = load(u, Net.UA_MOBILE) ?: return null
+        val m = Regex("video_redirect/\\?src=([^\"&]+)").find(html) ?: return null
+        val src = runCatching { URLDecoder.decode(m.groupValues[1], "UTF-8") }.getOrNull() ?: return null
+        if (!src.startsWith("http")) return null
+        val title = meta(html, "og:title")?.takeIf { it.isNotBlank() } ?: "Facebook ${idOf(finalUrl) ?: "video"}"
+        return Info(finalUrl, title, meta(html, "og:image"), null, src, 0L)
+    }
+
+    /** Reads the page in chunks and stops soon after the video links appear (the page is often 2 MB or more). */
+    private fun readUseful(body: ResponseBody): String {
+        val sb = StringBuilder()
+        val source = body.source()
+        val buf = Buffer()
+        var foundAt = -1
+        val keys = (hdKeys + sdKeys + listOf("dash_manifest")).map { "\"$it\"" }
+        while (sb.length < 4_000_000) {
+            if (source.read(buf, 65536L) < 0L) break
+            sb.append(buf.readUtf8())
+            if (foundAt < 0 && keys.any { sb.contains(it) }) foundAt = sb.length
+            if (foundAt >= 0 && sb.length - foundAt > 120_000) break
+        }
+        return sb.toString()
     }
 
     private fun idOf(url: String): String? =

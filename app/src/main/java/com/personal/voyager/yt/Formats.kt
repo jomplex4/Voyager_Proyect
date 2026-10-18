@@ -8,6 +8,7 @@ import org.schabi.newpipe.extractor.stream.Stream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.VideoStream
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 enum class AudioKind(val tag: String, val label: String, val kbps: Int, val mp3: Boolean) {
     M4A_128("M4A_128K", "M4A 128K", 128, false),
@@ -37,6 +38,25 @@ class VideoSel(
 class AudioOpt(val kind: AudioKind, val bytes: Long, val estimated: Boolean)
 
 object Formats {
+    private val STANDARD = intArrayOf(144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
+
+    /**
+     * The quality YouTube shows for a stream. Wide (cinematic) videos have a smaller real height than their
+     * label, e.g. 1280x536 is "720p" and 3840x1608 is "2160p", so the label comes from the width for them.
+     */
+    fun labelHeight(v: VideoStream): Int {
+        val w = v.width
+        val h = v.height
+        if (h <= 0) return 0
+        val eff = when {
+            w <= 0 -> h
+            w >= h -> maxOf(h, (w * 9f / 16f).roundToInt())
+            else -> w
+        }
+        val best = STANDARD.minByOrNull { abs(it - eff) } ?: eff
+        return if (abs(best - eff) <= best * 0.08) best else eff
+    }
+
     private fun progressive(s: Stream) = s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && s.isUrl
 
     fun lengthOf(s: Stream): Long = runCatching { s.itagItem?.contentLength ?: -1L }.getOrDefault(-1L)
@@ -66,8 +86,8 @@ object Formats {
 
     fun availableHeights(info: StreamInfo): List<Int> {
         val h = HashSet<Int>()
-        info.videoOnlyStreams.filter { progressive(it) && it.height > 0 }.forEach { h.add(it.height) }
-        info.videoStreams.filter { progressive(it) && it.height > 0 }.forEach { h.add(it.height) }
+        info.videoOnlyStreams.filter { progressive(it) && it.height > 0 }.forEach { h.add(labelHeight(it)) }
+        info.videoStreams.filter { progressive(it) && it.height > 0 }.forEach { h.add(labelHeight(it)) }
         return h.sorted()
     }
 
@@ -75,7 +95,7 @@ object Formats {
 
     private fun build(info: StreamInfo, h: Int, allowWebm: Boolean): VideoSel? {
         val dur = info.duration
-        val vOnly = info.videoOnlyStreams.filter { progressive(it) && it.height == h }
+        val vOnly = info.videoOnlyStreams.filter { progressive(it) && labelHeight(it) == h }
         val avc = best(vOnly.filter { isAvc(it) })
         val vp9 = best(vOnly.filter { isVp9(it) })
 
@@ -93,7 +113,7 @@ object Formats {
         if (allowWebm && vp9 != null) merge(vp9, pickOpus(info), true)?.let { return it }
         if (avc != null) merge(avc, pickM4a(info), false)?.let { return it }
 
-        val muxed = info.videoStreams.filter { progressive(it) && it.height == h }.maxByOrNull { it.fps }
+        val muxed = info.videoStreams.filter { progressive(it) && labelHeight(it) == h }.maxByOrNull { it.fps }
         if (muxed != null) {
             val b = lengthOf(muxed)
             val bytes = if (b > 0) b else estBytes(muxed.bitrate / 1000, dur)

@@ -18,6 +18,7 @@ class VoyagerApp : Application(), ImageLoaderFactory {
         Prefs.init(this)
         NewPipe.init(NewPipeDownloader(), Localization("en", "US"), ContentCountry("US"))
         Downloads.init(this)
+        runCatching { getSystemService(android.app.NotificationManager::class.java).deleteNotificationChannel("downloads") }
     }
 
     /** Small caches: the target phone has about 2 GB of RAM. */
@@ -27,7 +28,7 @@ class VoyagerApp : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("img"))
-                    .maxSizeBytes(32L * 1024 * 1024)
+                    .maxSizeBytes(16L * 1024 * 1024)
                     .build()
             }
             .allowRgb565(true)
