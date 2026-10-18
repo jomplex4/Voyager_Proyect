@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -50,11 +51,17 @@ private const val VISIBLE_INPUT =
 private class Mode(val login: String, val home: String, val desktop: Boolean, val software: Boolean)
 
 private val MODES = listOf(
+    Mode("https://mbasic.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = false),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
     Mode("https://www.facebook.com/login/", "https://www.facebook.com/", desktop = true, software = true),
-    Mode("https://mbasic.facebook.com/login/", "https://mbasic.facebook.com/", desktop = false, software = true),
 )
+private const val HOME = "https://m.facebook.com/"
+
+private fun isLoginPage(url: String?): Boolean {
+    val u = android.net.Uri.parse(url ?: return false)
+    return (u.path ?: "").startsWith("/login") || (u.path ?: "").startsWith("/checkpoint")
+}
 
 /**
  * Download buttons for Facebook. On a video or reel page there is ONE button (fixed on the right side, away from the
@@ -181,9 +188,15 @@ fun FacebookScreen(vm: AppViewModel) {
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
-        w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
-        w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
-        w.loadUrl(if (FbSession.loggedIn()) m.home else m.login)
+        if (FbSession.loggedIn()) {
+            w.settings.userAgentString = defaultUa
+            w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            w.loadUrl(HOME)
+        } else {
+            w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
+            w.setLayerType(if (m.software) View.LAYER_TYPE_SOFTWARE else View.LAYER_TYPE_HARDWARE, null)
+            w.loadUrl(m.login)
+        }
     }
 
     // If no login field is really visible after a few seconds, the next mode is tried automatically.
@@ -205,7 +218,7 @@ fun FacebookScreen(vm: AppViewModel) {
         if (w != null && w.canGoBack()) w.goBack() else vm.pop()
     }
 
-    Box(Modifier.fillMaxSize().imePadding()) {
+    Box(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) {
         AndroidView(
             factory = { c ->
                 val cm = CookieManager.getInstance()
@@ -220,6 +233,15 @@ fun FacebookScreen(vm: AppViewModel) {
                     webChromeClient = WebChromeClient()
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            if (loggedIn && isLoginPage(url) && view != null) {
+                                // The saved session expired: start the login again from the page that works here.
+                                loggedIn = false
+                                FbSession.logout()
+                                mode = 0
+                                useMode(view, 0)
+                                scheduleCheck(view, 0)
+                                return
+                            }
                             checkLogin(view)
                         }
 
@@ -231,9 +253,11 @@ fun FacebookScreen(vm: AppViewModel) {
                         private fun checkLogin(view: WebView?) {
                             if (FbSession.loggedIn()) {
                                 cm.flush()
-                                if (!loggedIn) {
+                                if (!loggedIn && !isLoginPage(view?.url)) {
                                     loggedIn = true
-                                    view?.loadUrl(MODES[mode].home)
+                                    view?.settings?.userAgentString = defaultUa
+                                    view?.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                                    view?.loadUrl(HOME)
                                 }
                             }
                         }
@@ -245,7 +269,9 @@ fun FacebookScreen(vm: AppViewModel) {
             onRelease = {
                 web = null
                 // The web cache only grows while browsing: empty it when leaving once it is large. The login stays.
-                if (dirSize(ctx.cacheDir) > 20L * 1024 * 1024) it.clearCache(true)
+                it.clearCache(true)
+                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
+                CookieManager.getInstance().flush()
                 it.destroy()
             },
             modifier = Modifier.fillMaxSize(),

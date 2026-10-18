@@ -1,7 +1,7 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 2.12, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 2.13, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
 
 ## 2. Tecnología
 - Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
@@ -23,7 +23,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Máx. 2 DESCARGANDO a la vez, procesado sin límite. Carpetas `Voyager/Voyager video|music|photo`.
 
 ## 5. Historial
-- 1.0 base; 1.1 carpeta Voyager, sin notificación de descarga, portadas; 1.2 login FB, cola 2; 2.4 sin recarga al volver; 2.6 calidad y reanudar; 2.8 DASH FB; 2.10 modos de login FB; 2.11 FB pantalla completa; 2.12 subcarpetas.
+- 1.0 base; 1.1 carpeta Voyager, sin notificación de descarga, portadas; 1.2 login FB, cola 2; 2.4 sin recarga al volver; 2.6 calidad y reanudar; 2.8 DASH FB; 2.10 modos de login FB; 2.11 FB pantalla completa; 2.12 subcarpetas; 2.13 login FB por página simple y sesión caducada.
 
 ## 6. Bugs resueltos (no repetir)
 - PNG y WEBP con el mismo nombre: duplicados al descomprimir encima. Nunca renombrar/borrar archivos entre versiones.
@@ -34,6 +34,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Teléfono lageado: el reproductor externo reintentaba un URI con permiso temporal; se pasa URI de MediaStore y `NEW_TASK`.
 - Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
 - FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
+- FB en blanco con sesión caducada: la app creía estar conectada; si Facebook manda a /login se reinicia el login simple.
 - FB bajaba la portada del reel: un solo botón fijo en páginas de video.
 
 ## 7. Pendientes
