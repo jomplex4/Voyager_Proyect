@@ -13,7 +13,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -56,8 +59,8 @@ private class Mode(val login: String, val home: String, val desktop: Boolean, va
 private val MODES = listOf(
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = false),
     Mode("https://m.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
-    Mode("https://www.facebook.com/login/", "https://www.facebook.com/", desktop = true, software = true),
-    Mode("https://mbasic.facebook.com/login/", "https://mbasic.facebook.com/", desktop = false, software = true),
+    Mode("https://mbasic.facebook.com/login/", "https://m.facebook.com/", desktop = false, software = true),
+    Mode("https://www.facebook.com/login/", "https://m.facebook.com/", desktop = true, software = true),
 )
 private const val HOME = "https://m.facebook.com/"
 
@@ -220,10 +223,12 @@ fun FacebookScreen(vm: AppViewModel) {
     var mode by remember { mutableIntStateOf(0) }
     var defaultUa by remember { mutableStateOf("") }
     var dbg by remember { mutableStateOf("") }
+    var touched by remember { mutableStateOf(false) }
     var resetRef: () -> Unit = {}
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
+        touched = false
         if (loggedIn) {
             w.settings.userAgentString = defaultUa
             w.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
@@ -252,14 +257,14 @@ fun FacebookScreen(vm: AppViewModel) {
                 if (blank) resetRef()
             } else {
                 w.evaluateJavascript(VISIBLE_INPUT) { r ->
-                    if (my == mode && !loggedIn && (r != "1" || blank) && my + 1 < MODES.size) {
+                    if (my == mode && !loggedIn && !touched && (r != "1" || blank) && my + 1 < MODES.size) {
                         mode = my + 1
                         useMode(w, mode)
                         scheduleCheck(w, mode)
                     }
                 }
             }
-        }, if (loggedIn) 10000 else 7000)
+        }, if (loggedIn) 12000 else 10000)
     }
 
     // Long press on the back arrow: forget the saved login and start the login modes from the beginning.
@@ -291,6 +296,11 @@ fun FacebookScreen(vm: AppViewModel) {
                     settings.domStorageEnabled = true
                     defaultUa = settings.userAgentString
                     addJavascriptInterface(Bridge(vm), "Voyager")
+                    setOnTouchListener { _, _ ->
+                        touched = true
+                        false
+                    }
+                    var homeTries = 0
                     webChromeClient = WebChromeClient()
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -308,13 +318,13 @@ fun FacebookScreen(vm: AppViewModel) {
                             val u = url ?: return
                             if (FbSession.loggedIn() && !isLoginPage(u) && u.contains("facebook.com")) {
                                 cm.flush()
-                                if (u.contains("mbasic")) {
-                                    // The simple page shows the account: open the full site with the download buttons.
-                                    loggedIn = true
-                                    view?.let { goHome(it) }
-                                } else if (view != null) {
-                                    loggedIn = true
-                                    view.evaluateJavascript(INJECT, null)
+                                val onMobile = android.net.Uri.parse(u).host == "m.facebook.com"
+                                loggedIn = true
+                                if (!onMobile && homeTries < 3 && view != null) {
+                                    homeTries++
+                                    goHome(view) // logged in from any mode: continue on the mobile site
+                                } else {
+                                    view?.evaluateJavascript(INJECT, null)
                                 }
                             }
                         }
@@ -326,7 +336,7 @@ fun FacebookScreen(vm: AppViewModel) {
             onRelease = {
                 web = null
                 // The web cache only grows while browsing: empty it when leaving once it is large. The login stays.
-                it.clearCache(true)
+                if (dirSize(ctx.cacheDir) > 60L * 1024 * 1024) it.clearCache(true)
                 CookieManager.getInstance().flush()
                 it.destroy()
             },
@@ -338,7 +348,21 @@ fun FacebookScreen(vm: AppViewModel) {
                 .align(Alignment.TopStart),
             contentAlignment = Alignment.Center,
         ) { Ic(R.drawable.ic_arrow_back, size = 24.dp) }
-        if (dbg.isNotEmpty()) {
+        if (!loggedIn) {
+            Box(
+                Modifier.align(Alignment.TopStart).padding(start = 60.dp, top = 8.dp).height(44.dp)
+                    .clip(RoundedCornerShape(22.dp)).background(Color(0x99000000))
+                    .clickable {
+                        web?.let { w ->
+                            mode = (mode + 1) % MODES.size
+                            useMode(w, mode)
+                            scheduleCheck(w, mode)
+                        }
+                    }.padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Mode ${mode + 1}/${MODES.size}", style = Txt.Label.copy(color = Color.White)) }
+        }
+        if (dbg.isNotEmpty() && !loggedIn) {
             Text(dbg, style = Txt.Small.copy(color = Color(0x99888888)), modifier = Modifier.align(Alignment.BottomCenter).padding(4.dp))
         }
     }
