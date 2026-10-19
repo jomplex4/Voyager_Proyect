@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 2.17
+
+- Facebook: si hay una sesión guardada pero la página sale vacía, ahora se detecta mirando la imagen real (no el texto de la página) y se reinicia el inicio de sesión como en una instalación nueva. Con sesión guardada la página se dibuja por software. Una línea pequeña abajo muestra el estado (modo, sesión, página vacía sí/no).
+
 ## Versión 2.16
 
 - Facebook: se restaura el orden de modos de la 2.10, con la que sí se pudo iniciar sesión (las primeras páginas dejan las cookies que la página simple necesita). Se deja de borrar cookies automáticamente. La primera vez puede tardar hasta 25 segundos en mostrar el formulario. Mantener presionada la flecha de atrás borra el inicio de sesión y empieza de nuevo.
@@ -144,8 +148,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.16
-git push origin v2.16
+git tag v2.17
+git push origin v2.17
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -171,7 +175,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.16`, `git push origin v2.16`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.17`, `git push origin v2.17`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

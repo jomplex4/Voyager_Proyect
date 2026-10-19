@@ -2,6 +2,7 @@ package com.personal.voyager.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -167,6 +169,35 @@ private class Bridge(private val vm: AppViewModel) {
     }
 }
 
+/** True when the WebView is drawing nothing but white (checked on the real picture, not on the page text). */
+private fun looksBlank(w: WebView): Boolean {
+    val bw = w.width / 4
+    val bh = w.height / 4
+    if (bw <= 0 || bh <= 0) return false
+    val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.RGB_565)
+    return try {
+        val c = Canvas(bmp)
+        c.scale(0.25f, 0.25f)
+        w.draw(c)
+        var dark = 0
+        var y = 0
+        while (y < bh) {
+            var x = 0
+            while (x < bw) {
+                val p = bmp.getPixel(x, y)
+                if ((p and 0xFF) < 0xF0 || ((p shr 8) and 0xFF) < 0xF0 || ((p shr 16) and 0xFF) < 0xF0) dark++
+                x += 4
+            }
+            y += 4
+        }
+        dark == 0
+    } catch (e: Throwable) {
+        false
+    } finally {
+        bmp.recycle()
+    }
+}
+
 private fun dirSize(f: File): Long = f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
 /**
@@ -188,12 +219,14 @@ fun FacebookScreen(vm: AppViewModel) {
     var web by remember { mutableStateOf<WebView?>(null) }
     var mode by remember { mutableIntStateOf(0) }
     var defaultUa by remember { mutableStateOf("") }
+    var dbg by remember { mutableStateOf("") }
+    var resetRef: () -> Unit = {}
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
         if (loggedIn) {
             w.settings.userAgentString = defaultUa
-            w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            w.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             w.loadUrl(HOME)
         } else {
             w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
@@ -204,22 +237,29 @@ fun FacebookScreen(vm: AppViewModel) {
 
     fun goHome(w: WebView) {
         w.settings.userAgentString = defaultUa
-        w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        w.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         w.loadUrl(HOME)
     }
 
-    // 9 seconds after a login page loads, if no login field is really visible, try the next mode.
+    // After loading: check the real picture. Logged out and nothing visible: next mode. Logged in and the page is
+    // blank (saved session no longer works): forget it and restart the login modes, like on a fresh install.
     fun scheduleCheck(w: WebView, my: Int) {
         w.postDelayed({
-            if (my != mode || loggedIn) return@postDelayed
-            w.evaluateJavascript(VISIBLE_INPUT) { r ->
-                if (my == mode && !loggedIn && r != "1" && my + 1 < MODES.size) {
-                    mode = my + 1
-                    useMode(w, mode)
-                    scheduleCheck(w, mode)
+            if (my != mode) return@postDelayed
+            val blank = looksBlank(w)
+            dbg = "mode ${my + 1}/${MODES.size} · logged=$loggedIn · blank=$blank"
+            if (loggedIn) {
+                if (blank) resetRef()
+            } else {
+                w.evaluateJavascript(VISIBLE_INPUT) { r ->
+                    if (my == mode && !loggedIn && (r != "1" || blank) && my + 1 < MODES.size) {
+                        mode = my + 1
+                        useMode(w, mode)
+                        scheduleCheck(w, mode)
+                    }
                 }
             }
-        }, 7000)
+        }, if (loggedIn) 10000 else 7000)
     }
 
     // Long press on the back arrow: forget the saved login and start the login modes from the beginning.
@@ -232,6 +272,7 @@ fun FacebookScreen(vm: AppViewModel) {
         scheduleCheck(w, 0)
         vm.say("Login reset")
     }
+    resetRef = { resetLogin() }
 
     BackHandler {
         val w = web
@@ -297,5 +338,8 @@ fun FacebookScreen(vm: AppViewModel) {
                 .align(Alignment.TopStart),
             contentAlignment = Alignment.Center,
         ) { Ic(R.drawable.ic_arrow_back, size = 24.dp) }
+        if (dbg.isNotEmpty()) {
+            Text(dbg, style = Txt.Small.copy(color = Color(0x99888888)), modifier = Modifier.align(Alignment.BottomCenter).padding(4.dp))
+        }
     }
 }

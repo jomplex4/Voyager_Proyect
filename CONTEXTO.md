@@ -1,7 +1,7 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 2.16, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 2.17, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
 
 ## 2. Tecnología
 - Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
@@ -35,6 +35,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
 - FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
 - FB LOGIN (2.16, LEER): solo funcionó el orden m(hardware), m(software), www(escritorio), mbasic(software) con 7 s entre modos, SIN borrar cookies: las primeras páginas dejan cookies que mbasic necesita. No volver a saltar directo a mbasic ni a llamar FbSession.logout() automáticamente (rompió el login en 2.13-2.15). Escape manual: mantener presionada la flecha.
+- FB 2.17: con cookie guardada y página en blanco (cookie vieja, scheduleCheck no hacía nada) se detecta por píxeles (`looksBlank`) y se hace resetLogin(). Línea de estado abajo.
 - (Descartado, 2.15) FB en blanco con cookie vieja: no se confía en la cookie; siempre se abre mbasic.facebook.com (software) y es la página la que decide login/cuenta; la web completa (m.facebook.com) solo tras verlo en mbasic. Si la web completa manda a /login, se borra la sesión.
 - FB en blanco con sesión caducada: la app creía estar conectada; si Facebook manda a /login se reinicia el login simple.
 - FB bajaba la portada del reel: un solo botón fijo en páginas de video.
