@@ -18,7 +18,7 @@ import org.schabi.newpipe.extractor.stream.StreamType
 object Resolver {
 
     suspend fun resolve(job: DlJob, allowWebm: Boolean = true, fresh: Boolean = false): Plan = withContext(Dispatchers.IO) {
-        if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
+        if (job.source == "fbsrc") resolveSrc(job) else if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
     }
 
     private fun ytUa(url: String): String =
@@ -56,6 +56,15 @@ object Resolver {
             return Plan.Direct(src(m), if (webm) "video/webm" else "video/mp4", if (webm) "webm" else "mp4", true, tag)
         }
         return Plan.Merge(src(sel.video!!), src(sel.audio!!), sel.webm, tag)
+    }
+
+    private suspend fun resolveSrc(job: DlJob): Plan {
+        val s = Src(job.url, Facebook.probeSize(job.url), "fbsrc", Net.UA_CHROME)
+        if (job.choice.startsWith("A:")) {
+            val k = AudioKind.fromTag(job.choice.substring(2))
+            return if (k.mp3) Plan.Mp3(s, k.kbps, k.tag) else Plan.M4a(s, k.tag)
+        }
+        return Plan.Direct(s, "video/mp4", "mp4", true, "FB")
     }
 
     private suspend fun resolveFb(job: DlJob, fresh: Boolean): Plan {

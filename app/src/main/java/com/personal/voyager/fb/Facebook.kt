@@ -95,7 +95,7 @@ object Facebook {
 
     /** The cookie is only ever sent to facebook.com hosts, even if a redirect points somewhere else. */
     private val client: OkHttpClient by lazy {
-        Net.client.newBuilder().addNetworkInterceptor { chain ->
+        Net.client.newBuilder().callTimeout(25, java.util.concurrent.TimeUnit.SECONDS).addNetworkInterceptor { chain ->
             val req = chain.request()
             if (req.url.host.endsWith("facebook.com")) chain.proceed(req)
             else chain.proceed(req.newBuilder().removeHeader("Cookie").build())
@@ -117,13 +117,14 @@ object Facebook {
             if (hit != null) return hit.second
         }
         var netError: Throwable? = null
-        val a = fetchScope.async { runCatching { parsePage(inputUrl, Net.UA_CHROME) }.onFailure { netError = it }.getOrNull() }
+        val a = fetchScope.async { runCatching { parsePage(desktopVariant(inputUrl), Net.UA_CHROME) }.onFailure { netError = it }.getOrNull() }
         val b = fetchScope.async { runCatching { parsePage(mobileVariant(inputUrl), Net.UA_MOBILE) }.onFailure { netError = it }.getOrNull() }
-        val first = select<Pair<Info?, Deferred<Info?>>> {
+        // Never wait forever: Facebook sometimes keeps a page open while trickling data.
+        val first = withTimeoutOrNull(30_000) { select<Pair<Info?, Deferred<Info?>>> {
             a.onAwait { it to b }
             b.onAwait { it to a }
-        }
-        var info: Info? = first.first ?: first.second.await()
+        } } ?: throw java.io.IOException("Facebook took too long to answer, try again")
+        var info: Info? = first.first ?: withTimeoutOrNull(15_000) { first.second.await() }
         if (info != null && info.dashVideos.isEmpty()) {
             val o = withTimeoutOrNull(4000) { first.second.await() }
             if (o != null && o.dashVideos.isNotEmpty()) info = o
@@ -141,6 +142,9 @@ object Facebook {
         }
         return info
     }
+
+    private fun desktopVariant(url: String): String =
+        hostSwap(url, "www.facebook.com", setOf("m.facebook.com", "mbasic.facebook.com", "web.facebook.com", "facebook.com"))
 
     private fun mobileVariant(url: String): String = hostSwap(url, "m.facebook.com", setOf("www.facebook.com", "facebook.com", "web.facebook.com"))
 
@@ -198,12 +202,14 @@ object Facebook {
         val source = body.source()
         val buf = Buffer()
         var foundAt = -1
+        val started = System.currentTimeMillis()
         val keys = (hdKeys + sdKeys + listOf("dash_manifest")).map { "\"$it\"" }
         while (sb.length < 4_000_000) {
             if (source.read(buf, 65536L) < 0L) break
             sb.append(buf.readUtf8())
             if (foundAt < 0 && keys.any { sb.contains(it) }) foundAt = sb.length
             if (foundAt >= 0 && sb.length - foundAt > 120_000) break
+            if (System.currentTimeMillis() - started > 15_000) break
         }
         return sb.toString()
     }

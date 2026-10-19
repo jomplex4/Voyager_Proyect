@@ -4,7 +4,13 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
-## Versión 3.0 (final)
+## Versión 3.1 (final)
+
+- **"Loading formats" y el reproductor de Facebook ya no se quedan cargando:** si la página ya tiene el archivo del video (lo normal en reels), la app lo usa directo, sin descargar la página de Facebook (casi instantáneo). Si no, lee la página con límites de tiempo (como máximo unos 30 s) y avisa si Facebook no responde.
+- **Actualización automática de YouTube:** cada lunes GitHub revisa si salió una versión nueva del extractor de YouTube; si salió, compila sola y publica un Release "VOYAGER auto" en la pestaña Releases. Solo tienes que instalar ese APK encima.
+- Antes de subir cambios tuyos, usa `git pull` (por si el robot actualizó algo).
+
+## Versión 3.0
 
 - **Facebook, video en negro:** la web de Facebook se dibuja con aceleración normal (por software el video no se ve, solo la portada).
 - **Botones:** descargar (rojo) y reproducir (oscuro) en cada video y reel; botón pequeño de descarga en cada cuadro de la lista de reels de un canal.
@@ -163,8 +169,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v3.0
-git push origin v3.0
+git tag v3.1
+git push origin v3.1
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -190,7 +196,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.0`, `git push origin v3.0`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.1`, `git push origin v3.1`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

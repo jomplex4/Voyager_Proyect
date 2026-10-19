@@ -1,7 +1,7 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.0, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.1, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
 
 ## 2. Tecnología
 - Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
@@ -35,6 +35,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
 - FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
 - FB LOGIN (2.16, LEER): solo funcionó el orden m(hardware), m(software), www(escritorio), mbasic(software) con 7 s entre modos, SIN borrar cookies: las primeras páginas dejan cookies que mbasic necesita. No volver a saltar directo a mbasic ni a llamar FbSession.logout() automáticamente (rompió el login en 2.13-2.15). Escape manual: mantener presionada la flecha.
+- FB 3.1: "Loading formats"/reproductor sin fin = lectura de página sin límite (Facebook deja la conexión abierta). Ahora: el script pasa `video.currentSrc` (archivo real) y se usa directo (source "fbsrc", choice "F:SRC"); si no hay, lectura con callTimeout 25 s, 15 s por página y tope total 30 s, versión de escritorio en www.
 - FB 3.0: video negro = capa de software en WebView; la web logueada usa capa de HARDWARE (no leer píxeles). Datos de usuario crecían por WebStorage de Facebook: se borra al salir. Botones play/descarga/mosaico en el script INJECT. Reproducir FB: Screen.FbPlay + PlayerHub.loadFb (DASH o SD/HD).
 - FB 2.18 (capturas de Redy): el formulario aparecía en el modo 2 (m.facebook.com, software) pero se saltaba al 3 (escritorio) a los 7 s mientras escribía, y tras entrar se quedaba en la web de escritorio. Ahora: 10 s por modo, no cambia si se toca la pantalla, y tras login siempre va a m.facebook.com. Botón Mode manual.
 - FB 2.17: con cookie guardada y página en blanco (cookie vieja, scheduleCheck no hacía nada) se detecta por píxeles (`looksBlank`) y se hace resetLogin(). Línea de estado abajo.
@@ -52,6 +53,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Login de Facebook solo por WebView (la contraseña nunca pasa por la app).
 
 ## 9. Mantenimiento (YouTube/Facebook cambian)
+- AUTOMÁTICO: cada lunes Actions compara NewPipeExtractor con la última versión; si cambió, edita el toml, compila y publica el Release "auto-N". versionCode = 100 + número de ejecución (siempre crece). Hacer `git pull` antes de subir cambios.
 - YouTube falla: subir `newpipe` en `gradle/libs.versions.toml` a la última versión de github.com/TeamNewPipe/NewPipeExtractor/releases.
 - Facebook falla al leer videos: ajustar llaves/regex en `fb/Facebook.kt` (`hdKeys`, `sdKeys`, `dash_manifest`); botones de la web: script `INJECT` en `ui/FacebookScreen.kt`.
 

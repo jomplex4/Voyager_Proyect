@@ -35,6 +35,7 @@ data class DlJob(
 fun tagFor(choice: String): String = when {
     choice.startsWith("A:") -> choice.substring(2)
     choice.startsWith("V:") -> choice.substring(2) + "P"
+    choice == "F:SRC" -> "FB"
     choice.startsWith("F:") -> choice.substring(2)
     else -> choice
 }

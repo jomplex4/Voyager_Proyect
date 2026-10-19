@@ -28,8 +28,8 @@ android {
         applicationId = "com.personal.voyager"
         minSdk = 30
         targetSdk = 35
-        versionCode = 23
-        versionName = "3.0"
+        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) // always grows, also for the automatic builds
+        versionName = "3.1"
         resourceConfigurations += listOf("en")
     }
 

@@ -116,6 +116,8 @@ private val INJECT = """
     }
     return best;
   }
+  function srcOf(v){ var x = v && (v.currentSrc || v.src); return (x && /^https?:/.test(x)) ? x : ''; }
+  function poster(v){ return (v && v.poster) ? v.poster : ''; }
   function fire(fn){ var now = Date.now(); if (now - last < 2500) return; last = now; fn(); }
   function mk(cls, icon, onTap){
     var b = document.createElement('div'); b.className = 'vy-btn ' + cls; b.innerHTML = icon;
@@ -126,24 +128,24 @@ private val INJECT = """
   function prep(host){
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
   }
-  function add(host, getUrl){
+  function add(host, getUrl, v){
     if (!host || host.getAttribute('data-vy')) return;
     host.setAttribute('data-vy', '1'); prep(host);
-    host.appendChild(mk('', DL, function(){ Voyager.video(getUrl()); }));
-    host.appendChild(mk('vy-play', PLAY, function(){ Voyager.play(getUrl()); }));
+    host.appendChild(mk('', DL, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v)); }));
+    host.appendChild(mk('vy-play', PLAY, function(){ Voyager.play(getUrl(), srcOf(v), document.title, poster(v)); }));
   }
   function addTile(a){
     if (a.getAttribute('data-vy')) return;
     a.setAttribute('data-vy', '1'); prep(a);
-    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href); }));
+    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href, '', document.title, ''); }));
   }
   function scan(){
     var fixed = document.querySelectorAll('.vy-fixed');
     if (VIDEO_PAGE.test(location.pathname + location.search)) {
       if (!fixed.length) {
         var u = function(){ var v = bestVideo(); return v ? permalink(v) : location.href; };
-        document.body.appendChild(mk('vy-fixed', DL, function(){ Voyager.video(u()); }));
-        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ Voyager.play(u()); }));
+        document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); Voyager.video(u(), srcOf(v), document.title, poster(v)); }));
+        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ var v = bestVideo(); Voyager.play(u(), srcOf(v), document.title, poster(v)); }));
       }
       return;
     }
@@ -156,7 +158,7 @@ private val INJECT = """
       if (r.width >= 70 && r.width <= 260 && r.height >= 90 && r.height <= 520 && (a.querySelector('img') || a.querySelector('[style*="background-image"]'))) addTile(a);
     }
     var vs = document.querySelectorAll('video');
-    for (var i = 0; i < vs.length; i++) (function(v){ add(v.parentElement, function(){ return permalink(v); }); })(vs[i]);
+    for (var i = 0; i < vs.length; i++) (function(v){ add(v.parentElement, function(){ return permalink(v); }, v); })(vs[i]);
     var is = document.querySelectorAll('img');
     for (var j = 0; j < is.length; j++) {
       var m = is[j];
@@ -168,7 +170,7 @@ private val INJECT = """
             var q = n.querySelector && n.querySelector(VLINK);
             if (q && q.href) { link = q.href; break; }
           }
-          if (link) add(m.parentElement, function(){ return link; });
+          if (link) add(m.parentElement, function(){ return link; }, null);
           else if (!m.parentElement.getAttribute('data-vy')) {
             m.parentElement.setAttribute('data-vy', '1'); prep(m.parentElement);
             m.parentElement.appendChild(mk('', DL, function(){ Voyager.photo(m.src); }));
@@ -188,11 +190,15 @@ private class Bridge(private val vm: AppViewModel) {
     private val main = Handler(Looper.getMainLooper())
     private val videoLink = Regex("/reel|/videos/|/watch|story_fbid|/posts/|permalink|/share/[vr]/|[?&]v=")
 
+    private fun clean(t: String) = t.replace(Regex("\\s*\\|\\s*Facebook\\s*$"), "").trim().ifEmpty { "Facebook video" }
+
+    /** [src] is the video file the page is already playing (empty when the page uses a stream instead). */
     @JavascriptInterface
-    fun video(url: String) {
+    fun video(url: String, src: String, title: String, poster: String) {
         main.post {
             when {
                 vm.sheet != null -> Unit // a download list is already loading or open
+                src.isNotEmpty() -> vm.downloadFbSrc(src, url, clean(title), poster.ifEmpty { null })
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap download")
                 else -> vm.downloadVideoUrl(url)
             }
@@ -200,10 +206,11 @@ private class Bridge(private val vm: AppViewModel) {
     }
 
     @JavascriptInterface
-    fun play(url: String) {
+    fun play(url: String, src: String, title: String, poster: String) {
         main.post {
             when {
                 vm.sheet != null -> Unit
+                src.isNotEmpty() -> vm.push(Screen.FbPlay(url, src, clean(title), poster.ifEmpty { null }))
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap play")
                 else -> vm.push(Screen.FbPlay(url))
             }
@@ -301,7 +308,9 @@ fun FacebookScreen(vm: AppViewModel) {
                 // hardware drawing cannot be read back: a dead session is handled by the login redirect or a long press
             } else {
                 w.evaluateJavascript(VISIBLE_INPUT) { r ->
-                    if (my == mode && !loggedIn && !touched && (r != "1" || blank) && my + 1 < MODES.size) {
+                    if (my == mode && !loggedIn && my + 1 < MODES.size &&
+                        ((!touched && (r != "1" || blank)) || (blank && MODES[my].software))
+                    ) {
                         mode = my + 1
                         useMode(w, mode)
                         scheduleCheck(w, mode)
