@@ -1,7 +1,7 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.1, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.2, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
 
 ## 2. Tecnología
 - Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
@@ -35,6 +35,7 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
 - FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
 - FB LOGIN (2.16, LEER): solo funcionó el orden m(hardware), m(software), www(escritorio), mbasic(software) con 7 s entre modos, SIN borrar cookies: las primeras páginas dejan cookies que mbasic necesita. No volver a saltar directo a mbasic ni a llamar FbSession.logout() automáticamente (rompió el login en 2.13-2.15). Escape manual: mantener presionada la flecha.
+- FB 3.2: la lectura de la página falla (Facebook usa blob/MSE, `currentSrc` vacío). Solución: `fb/MediaSniffer.kt` observa los .mp4 de fbcdn (shouldInterceptRequest + `performance.getEntriesByType('resource')` del script), quita bytestart/byteend y elige el video/audio más pedido y reciente. Fuentes de descarga: "fbsniff" (url = video\naudio), "fbsrc" (archivo directo), "fb" (lectura de página, último recurso). Si deja de funcionar, ver qué .mp4 pide el reproductor (ajustar la clasificación por el parámetro `efg`).
 - FB 3.1: "Loading formats"/reproductor sin fin = lectura de página sin límite (Facebook deja la conexión abierta). Ahora: el script pasa `video.currentSrc` (archivo real) y se usa directo (source "fbsrc", choice "F:SRC"); si no hay, lectura con callTimeout 25 s, 15 s por página y tope total 30 s, versión de escritorio en www.
 - FB 3.0: video negro = capa de software en WebView; la web logueada usa capa de HARDWARE (no leer píxeles). Datos de usuario crecían por WebStorage de Facebook: se borra al salir. Botones play/descarga/mosaico en el script INJECT. Reproducir FB: Screen.FbPlay + PlayerHub.loadFb (DASH o SD/HD).
 - FB 2.18 (capturas de Redy): el formulario aparecía en el modo 2 (m.facebook.com, software) pero se saltaba al 3 (escritorio) a los 7 s mientras escribía, y tras entrar se quedaba en la web de escritorio. Ahora: 10 s por modo, no cambia si se toca la pantalla, y tras login siempre va a m.facebook.com. Botón Mode manual.

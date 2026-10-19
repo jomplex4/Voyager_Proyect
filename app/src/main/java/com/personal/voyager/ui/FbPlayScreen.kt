@@ -49,7 +49,12 @@ fun FbPlayScreen(vm: AppViewModel, s: Screen.FbPlay) {
     LaunchedEffect(s.url) {
         try {
             val direct = s.src
-            val i = if (direct != null) Facebook.Info(s.url, s.title ?: "Facebook video", s.thumb, null, direct, 0L)
+            val i = if (direct != null && s.audio != null) Facebook.Info(
+                s.url, s.title ?: "Facebook video", s.thumb, null, null, 0L,
+                listOf(Facebook.Rep(0, if (s.height > 0) s.height else 360, 0L, direct, "avc1")),
+                Facebook.Rep(0, 0, 0L, s.audio, "mp4a"),
+            )
+            else if (direct != null) Facebook.Info(s.url, s.title ?: "Facebook video", s.thumb, null, direct, 0L)
             else kotlinx.coroutines.withTimeoutOrNull(40_000) { Facebook.fetch(s.url) } ?: throw java.io.IOException("Facebook took too long to answer, try again")
             info = i
             val used = PlayerHub.loadFb(ctx, i, 360, 0L)

@@ -10,6 +10,8 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -44,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.personal.voyager.R
 import com.personal.voyager.core.Net
 import com.personal.voyager.fb.FbSession
+import com.personal.voyager.fb.MediaSniffer
 import com.personal.voyager.vm.AppViewModel
 import com.personal.voyager.vm.Screen
 import java.io.File
@@ -118,6 +121,12 @@ private val INJECT = """
   }
   function srcOf(v){ var x = v && (v.currentSrc || v.src); return (x && /^https?:/.test(x)) ? x : ''; }
   function poster(v){ return (v && v.poster) ? v.poster : ''; }
+  function res(){
+    var out = [], l = performance.getEntriesByType('resource'), now = performance.now();
+    for (var i = 0; i < l.length; i++) { var e = l[i]; if (now - e.startTime < 40000 && /\.mp4/.test(e.name) && /fbcdn|facebook/.test(e.name)) out.push(e.name); }
+    return out.slice(-60).join('\n');
+  }
+  function withVideo(v, cb){ if (v && v.paused) { try { v.play(); } catch (e) {} setTimeout(cb, 1800); } else cb(); }
   function fire(fn){ var now = Date.now(); if (now - last < 2500) return; last = now; fn(); }
   function mk(cls, icon, onTap){
     var b = document.createElement('div'); b.className = 'vy-btn ' + cls; b.innerHTML = icon;
@@ -131,21 +140,21 @@ private val INJECT = """
   function add(host, getUrl, v){
     if (!host || host.getAttribute('data-vy')) return;
     host.setAttribute('data-vy', '1'); prep(host);
-    host.appendChild(mk('', DL, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v)); }));
-    host.appendChild(mk('vy-play', PLAY, function(){ Voyager.play(getUrl(), srcOf(v), document.title, poster(v)); }));
+    host.appendChild(mk('', DL, function(){ withVideo(v, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-'); }); }));
+    host.appendChild(mk('vy-play', PLAY, function(){ withVideo(v, function(){ Voyager.play(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-'); }); }));
   }
   function addTile(a){
     if (a.getAttribute('data-vy')) return;
     a.setAttribute('data-vy', '1'); prep(a);
-    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href, '', document.title, ''); }));
+    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href, '', document.title, '', '-'); }));
   }
   function scan(){
     var fixed = document.querySelectorAll('.vy-fixed');
     if (VIDEO_PAGE.test(location.pathname + location.search)) {
       if (!fixed.length) {
         var u = function(){ var v = bestVideo(); return v ? permalink(v) : location.href; };
-        document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); Voyager.video(u(), srcOf(v), document.title, poster(v)); }));
-        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ var v = bestVideo(); Voyager.play(u(), srcOf(v), document.title, poster(v)); }));
+        document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.video(u(), srcOf(v), document.title, poster(v), res()); }); }));
+        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.play(u(), srcOf(v), document.title, poster(v), res()); }); }));
       }
       return;
     }
@@ -192,13 +201,19 @@ private class Bridge(private val vm: AppViewModel) {
 
     private fun clean(t: String) = t.replace(Regex("\\s*\\|\\s*Facebook\\s*$"), "").trim().ifEmpty { "Facebook video" }
 
-    /** [src] is the video file the page is already playing (empty when the page uses a stream instead). */
+    /**
+     * [src] is the file the page plays directly (empty when it uses a stream); [res] are the media addresses the
+     * player asked for ("-" for a grid tile: nothing is playing, so the page is read instead).
+     */
     @JavascriptInterface
-    fun video(url: String, src: String, title: String, poster: String) {
+    fun video(url: String, src: String, title: String, poster: String, res: String) {
         main.post {
+            if (vm.sheet != null) return@post
+            if (res != "-") MediaSniffer.noteAll(res)
+            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick() else null
             when {
-                vm.sheet != null -> Unit // a download list is already loading or open
                 src.isNotEmpty() -> vm.downloadFbSrc(src, url, clean(title), poster.ifEmpty { null })
+                sniffed != null -> vm.downloadFbSniff(sniffed, clean(title), poster.ifEmpty { null })
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap download")
                 else -> vm.downloadVideoUrl(url)
             }
@@ -206,11 +221,14 @@ private class Bridge(private val vm: AppViewModel) {
     }
 
     @JavascriptInterface
-    fun play(url: String, src: String, title: String, poster: String) {
+    fun play(url: String, src: String, title: String, poster: String, res: String) {
         main.post {
+            if (vm.sheet != null) return@post
+            if (res != "-") MediaSniffer.noteAll(res)
+            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick() else null
             when {
-                vm.sheet != null -> Unit
                 src.isNotEmpty() -> vm.push(Screen.FbPlay(url, src, clean(title), poster.ifEmpty { null }))
+                sniffed != null -> vm.push(Screen.FbPlay(url, sniffed.video, clean(title), poster.ifEmpty { null }, sniffed.audio, sniffed.height))
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap play")
                 else -> vm.push(Screen.FbPlay(url))
             }
@@ -365,6 +383,12 @@ fun FacebookScreen(vm: AppViewModel) {
                                 useMode(view, 0)
                                 scheduleCheck(view, 0)
                             }
+                        }
+
+                        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                            val u = request?.url?.toString()
+                            if (u != null && u.contains(".mp4")) MediaSniffer.note(u) // only observed, never blocked
+                            return null
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {

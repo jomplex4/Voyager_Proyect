@@ -18,7 +18,7 @@ import org.schabi.newpipe.extractor.stream.StreamType
 object Resolver {
 
     suspend fun resolve(job: DlJob, allowWebm: Boolean = true, fresh: Boolean = false): Plan = withContext(Dispatchers.IO) {
-        if (job.source == "fbsrc") resolveSrc(job) else if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
+        if (job.source == "fbsniff") resolveSniff(job) else if (job.source == "fbsrc") resolveSrc(job) else if (job.source == "fb") resolveFb(job, fresh) else resolveYt(job, allowWebm, fresh)
     }
 
     private fun ytUa(url: String): String =
@@ -56,6 +56,29 @@ object Resolver {
             return Plan.Direct(src(m), if (webm) "video/webm" else "video/mp4", if (webm) "webm" else "mp4", true, tag)
         }
         return Plan.Merge(src(sel.video!!), src(sel.audio!!), sel.webm, tag)
+    }
+
+    /** job.url = video address, a line break, and the audio address (empty when the file already has sound). */
+    private suspend fun resolveSniff(job: DlJob): Plan {
+        val parts = job.url.split("\n")
+        val v = parts[0]
+        val a = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+        fun mk(url: String, size: Long) = Src(url, size, "fbs:$size", Net.UA_CHROME)
+        if (job.choice.startsWith("A:")) {
+            val k = AudioKind.fromTag(job.choice.substring(2))
+            val u = a ?: v
+            val s = mk(u, Facebook.probeSize(u))
+            return if (k.mp3) Plan.Mp3(s, k.kbps, k.tag) else Plan.M4a(s, k.tag)
+        }
+        if (a != null) {
+            val (vs, asz) = kotlinx.coroutines.coroutineScope {
+                val x = async { Facebook.probeSize(v) }
+                val y = async { Facebook.probeSize(a) }
+                x.await() to y.await()
+            }
+            return Plan.Merge(mk(v, vs), mk(a, asz), false, "FB")
+        }
+        return Plan.Direct(mk(v, Facebook.probeSize(v)), "video/mp4", "mp4", true, "FB")
     }
 
     private suspend fun resolveSrc(job: DlJob): Plan {

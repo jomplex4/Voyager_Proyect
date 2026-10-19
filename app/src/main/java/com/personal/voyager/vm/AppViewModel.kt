@@ -41,7 +41,10 @@ sealed class Screen {
     data object PlayHome : Screen()
     data object Downloading : Screen()
     data object Facebook : Screen()
-    data class FbPlay(val url: String, val src: String? = null, val title: String? = null, val thumb: String? = null) : Screen()
+    data class FbPlay(
+        val url: String, val src: String? = null, val title: String? = null, val thumb: String? = null,
+        val audio: String? = null, val height: Int = 0,
+    ) : Screen()
 }
 
 enum class Tab { DOWNLOAD, PLAY }
@@ -384,6 +387,34 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                     audioInit = audio, videoInit = video, preselect = "F:SRC",
                 ) { choice ->
                     enqueue(listOf(Spec("fbsrc", src, title, thumb, 0L, choice, uploader = "Facebook")))
+                }
+            )
+        }
+    }
+
+    /** The files the Facebook player itself was loading (see MediaSniffer): sizes are asked, the page is not read. */
+    fun downloadFbSniff(p: com.personal.voyager.fb.MediaSniffer.Picked, title: String, thumb: String?) {
+        sheetJob?.cancel()
+        sheet = SheetUi.Loading
+        sheetJob = viewModelScope.launch {
+            val (vs, asz) = coroutineScope {
+                val x = async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(p.video) } ?: -1L }
+                val y = async { p.audio?.let { a -> kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(a) } } ?: -1L }
+                x.await() to y.await()
+            }
+            val audio = AudioKind.entries.map { k ->
+                SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", "", true)
+            }
+            val total = if (vs > 0) vs + maxOf(asz, 0L) else -1L
+            val label = if (p.height > 0) "${p.height}p" else "Video"
+            val video = listOf(SheetRow("F:SNIFF", label, "As played on Facebook", Fmt.size(total), false))
+            val files = p.video + "\n" + (p.audio ?: "")
+            sheet = SheetUi.Ready(
+                SheetData(
+                    title = title, thumb = thumb, domain = "facebook.com", fromClipboard = false,
+                    audioInit = audio, videoInit = video, preselect = "F:SNIFF",
+                ) { choice ->
+                    enqueue(listOf(Spec("fbsniff", files, title, thumb, 0L, choice, uploader = "Facebook")))
                 }
             )
         }

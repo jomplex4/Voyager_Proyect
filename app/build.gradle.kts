@@ -29,7 +29,7 @@ android {
         minSdk = 30
         targetSdk = 35
         versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) // always grows, also for the automatic builds
-        versionName = "3.1"
+        versionName = "3.2"
         resourceConfigurations += listOf("en")
     }
 
