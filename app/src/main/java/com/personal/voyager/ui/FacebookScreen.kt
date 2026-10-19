@@ -45,6 +45,7 @@ import com.personal.voyager.R
 import com.personal.voyager.core.Net
 import com.personal.voyager.fb.FbSession
 import com.personal.voyager.vm.AppViewModel
+import com.personal.voyager.vm.Screen
 import java.io.File
 
 /** 1 when a login field is really visible on screen (not just present in the page), 0 otherwise. */
@@ -70,9 +71,10 @@ private fun isLoginPage(url: String?): Boolean {
 }
 
 /**
- * Download buttons for Facebook. On a video or reel page there is ONE button (fixed on the right side, away from the
- * "open app" banner) that downloads the video that is on screen. In the feed every video gets its own button, and
- * plain photos get a photo button. Taps are ignored for 2.5 seconds after each one.
+ * Buttons for Facebook (videos, reels, grid tiles) + light mode. On a video or reel page there is ONE download button
+ * and ONE play button (fixed on the right side, away from the "open app" banner) for the video on screen. In the feed
+ * every video gets both; reel tiles of a channel get a small download button; plain photos get a photo button.
+ * Light mode: videos do not start by themselves in the feed and page animations are off. Taps are ignored for 2.5 s.
  */
 private val INJECT = """
 (function(){
@@ -80,11 +82,22 @@ private val INJECT = """
   var VIDEO_PAGE = /\/(reel|reels|watch|videos)(\/|\?|$)|\/share\/[vr]\//;
   var LINK = 'a[href*="/reel/"],a[href*="/videos/"],a[href*="/watch"],a[href*="story_fbid"],a[href*="/posts/"],a[href*="permalink"],a[href*="/share/v/"],a[href*="/share/r/"]';
   var VLINK = 'a[href*="/reel/"],a[href*="/videos/"],a[href*="/watch"],a[href*="/share/v/"],a[href*="/share/r/"]';
-  var ICON = '<svg viewBox="0 0 24 24"><path d="M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z"/></svg>';
+  var DL = '<svg viewBox="0 0 24 24"><path d="M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z"/></svg>';
+  var PLAY = '<svg viewBox="0 0 24 24"><path d="M8,5v14l11,-7z"/></svg>';
   var st = document.createElement('style');
-  st.textContent = '.vy-btn{position:absolute;top:8px;left:8px;z-index:2147483647;width:42px;height:42px;border-radius:21px;background:#DC0000;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.6)}.vy-btn svg{width:24px;height:24px;fill:#fff}.vy-fixed{position:fixed!important;left:auto!important;top:38%!important;right:10px!important}';
+  st.textContent = '*{animation:none!important;transition:none!important}.vy-btn{position:absolute;top:8px;left:8px;z-index:2147483647;width:42px;height:42px;border-radius:21px;background:#DC0000;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.6)}.vy-btn svg{width:24px;height:24px;fill:#fff}.vy-play{top:56px!important;background:#2a2a2a!important}.vy-sm{width:30px;height:30px;border-radius:15px;top:4px;left:4px}.vy-sm svg{width:18px;height:18px}.vy-fixed{position:fixed!important;left:auto!important;top:38%!important;right:10px!important}.vy-fixed.vy-play{top:calc(38% + 52px)!important}';
   document.head.appendChild(st);
   var last = 0;
+  window.__vyTouch = 0;
+  document.addEventListener('touchstart', function(){ window.__vyTouch = Date.now(); }, true);
+  var op = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function(){
+    if (!VIDEO_PAGE.test(location.pathname + location.search) && Date.now() - window.__vyTouch > 1500) {
+      try { this.pause(); } catch (e) {}
+      return Promise.resolve();
+    }
+    return op.apply(this, arguments);
+  };
   function permalink(el){
     var n = el;
     for (var i = 0; i < 12 && n; i++, n = n.parentElement) {
@@ -104,29 +117,46 @@ private val INJECT = """
     return best;
   }
   function fire(fn){ var now = Date.now(); if (now - last < 2500) return; last = now; fn(); }
-  function mk(cls, onTap){
-    var b = document.createElement('div'); b.className = 'vy-btn ' + cls; b.innerHTML = ICON;
+  function mk(cls, icon, onTap){
+    var b = document.createElement('div'); b.className = 'vy-btn ' + cls; b.innerHTML = icon;
     var go = function(e){ e.stopPropagation(); e.preventDefault(); fire(onTap); };
     b.addEventListener('click', go, true); b.addEventListener('touchend', go, true);
     return b;
   }
-  function add(host, onTap){
-    if (!host || host.getAttribute('data-vy')) return;
-    host.setAttribute('data-vy', '1');
+  function prep(host){
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-    host.appendChild(mk('', onTap));
+  }
+  function add(host, getUrl){
+    if (!host || host.getAttribute('data-vy')) return;
+    host.setAttribute('data-vy', '1'); prep(host);
+    host.appendChild(mk('', DL, function(){ Voyager.video(getUrl()); }));
+    host.appendChild(mk('vy-play', PLAY, function(){ Voyager.play(getUrl()); }));
+  }
+  function addTile(a){
+    if (a.getAttribute('data-vy')) return;
+    a.setAttribute('data-vy', '1'); prep(a);
+    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href); }));
   }
   function scan(){
-    var fixed = document.querySelector('.vy-fixed');
+    var fixed = document.querySelectorAll('.vy-fixed');
     if (VIDEO_PAGE.test(location.pathname + location.search)) {
-      if (!fixed) document.body.appendChild(mk('vy-fixed', function(){
-        var v = bestVideo(); Voyager.video(v ? permalink(v) : location.href);
-      }));
+      if (!fixed.length) {
+        var u = function(){ var v = bestVideo(); return v ? permalink(v) : location.href; };
+        document.body.appendChild(mk('vy-fixed', DL, function(){ Voyager.video(u()); }));
+        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ Voyager.play(u()); }));
+      }
       return;
     }
-    if (fixed) fixed.remove();
+    for (var f = 0; f < fixed.length; f++) fixed[f].remove();
+    var as = document.querySelectorAll(VLINK);
+    for (var t = 0; t < as.length; t++) {
+      var a = as[t];
+      if (a.getAttribute('data-vy')) continue;
+      var r = a.getBoundingClientRect();
+      if (r.width >= 70 && r.width <= 260 && r.height >= 90 && r.height <= 520 && (a.querySelector('img') || a.querySelector('[style*="background-image"]'))) addTile(a);
+    }
     var vs = document.querySelectorAll('video');
-    for (var i = 0; i < vs.length; i++) (function(v){ add(v.parentElement, function(){ Voyager.video(permalink(v)); }); })(vs[i]);
+    for (var i = 0; i < vs.length; i++) (function(v){ add(v.parentElement, function(){ return permalink(v); }); })(vs[i]);
     var is = document.querySelectorAll('img');
     for (var j = 0; j < is.length; j++) {
       var m = is[j];
@@ -135,17 +165,20 @@ private val INJECT = """
           if (m.closest('[data-vy]')) return;
           var n = m, link = null;
           for (var k = 0; k < 5 && n; k++, n = n.parentElement) {
-            var a = n.querySelector && n.querySelector(VLINK);
-            if (a && a.href) { link = a.href; break; }
+            var q = n.querySelector && n.querySelector(VLINK);
+            if (q && q.href) { link = q.href; break; }
           }
-          if (link) add(m.parentElement, function(){ Voyager.video(link); });
-          else add(m.parentElement, function(){ Voyager.photo(m.src); });
+          if (link) add(m.parentElement, function(){ return link; });
+          else if (!m.parentElement.getAttribute('data-vy')) {
+            m.parentElement.setAttribute('data-vy', '1'); prep(m.parentElement);
+            m.parentElement.appendChild(mk('', DL, function(){ Voyager.photo(m.src); }));
+          }
         })(m);
       }
     }
   }
-  var t = null;
-  new MutationObserver(function(){ if (t) return; t = setTimeout(function(){ t = null; scan(); }, 700); })
+  var t0 = null;
+  new MutationObserver(function(){ if (t0) return; t0 = setTimeout(function(){ t0 = null; scan(); }, 700); })
     .observe(document.body, {childList: true, subtree: true});
   scan();
 })();
@@ -162,6 +195,17 @@ private class Bridge(private val vm: AppViewModel) {
                 vm.sheet != null -> Unit // a download list is already loading or open
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap download")
                 else -> vm.downloadVideoUrl(url)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun play(url: String) {
+        main.post {
+            when {
+                vm.sheet != null -> Unit
+                !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap play")
+                else -> vm.push(Screen.FbPlay(url))
             }
         }
     }
@@ -231,7 +275,7 @@ fun FacebookScreen(vm: AppViewModel) {
         touched = false
         if (loggedIn) {
             w.settings.userAgentString = defaultUa
-            w.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
             w.loadUrl(HOME)
         } else {
             w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
@@ -242,7 +286,7 @@ fun FacebookScreen(vm: AppViewModel) {
 
     fun goHome(w: WebView) {
         w.settings.userAgentString = defaultUa
-        w.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         w.loadUrl(HOME)
     }
 
@@ -254,7 +298,7 @@ fun FacebookScreen(vm: AppViewModel) {
             val blank = looksBlank(w)
             dbg = "mode ${my + 1}/${MODES.size} · logged=$loggedIn · blank=$blank"
             if (loggedIn) {
-                if (blank) resetRef()
+                // hardware drawing cannot be read back: a dead session is handled by the login redirect or a long press
             } else {
                 w.evaluateJavascript(VISIBLE_INPUT) { r ->
                     if (my == mode && !loggedIn && !touched && (r != "1" || blank) && my + 1 < MODES.size) {
@@ -264,7 +308,7 @@ fun FacebookScreen(vm: AppViewModel) {
                     }
                 }
             }
-        }, if (loggedIn) 12000 else 10000)
+        }, if (loggedIn) 12000 else 8000)
     }
 
     // Long press on the back arrow: forget the saved login and start the login modes from the beginning.
@@ -336,7 +380,8 @@ fun FacebookScreen(vm: AppViewModel) {
             onRelease = {
                 web = null
                 // The web cache only grows while browsing: empty it when leaving once it is large. The login stays.
-                if (dirSize(ctx.cacheDir) > 60L * 1024 * 1024) it.clearCache(true)
+                if (dirSize(ctx.cacheDir) > 40L * 1024 * 1024) it.clearCache(true)
+                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
                 CookieManager.getInstance().flush()
                 it.destroy()
             },

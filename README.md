@@ -4,6 +4,15 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 3.0 (final)
+
+- **Facebook, video en negro:** la web de Facebook se dibuja con aceleración normal (por software el video no se ve, solo la portada).
+- **Botones:** descargar (rojo) y reproducir (oscuro) en cada video y reel; botón pequeño de descarga en cada cuadro de la lista de reels de un canal.
+- **Reproducir con calidad:** el botón de reproducir abre el mismo reproductor de YouTube con selector de calidad, pantalla completa y +/-10 s.
+- **Modo ligero:** los videos no arrancan solos en el inicio y se apagan las animaciones de la página.
+- **Datos de usuario y caché:** Facebook guarda su almacenamiento interno en el teléfono; ahora se borra al salir (el inicio de sesión se conserva) y el caché se vacía si pasa de 40 MB.
+- **Inicio de sesión:** automático (modos cada 8 s, sin cambiar si tocas la pantalla) y siempre termina en la web de celular.
+
 ## Versión 2.18
 
 - Facebook login: orden de modos 1 normal, 2 móvil por software (el que muestra el formulario moderno), 3 página simple, 4 escritorio (último recurso). Espera 10 s por modo y deja de cambiar solo en cuanto tocas la pantalla. Botón "Mode" (junto a la flecha) para cambiar a mano.
@@ -154,8 +163,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v2.18
-git push origin v2.18
+git tag v3.0
+git push origin v3.0
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -181,7 +190,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v2.18`, `git push origin v2.18`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.0`, `git push origin v3.0`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

@@ -296,7 +296,7 @@ fun ResultsScreen(vm: AppViewModel, query: String) {
 // ---------------- video detail ----------------
 
 @Composable
-private fun PreviewPlayer(vm: AppViewModel, modifier: Modifier, zoom: Boolean = false) {
+fun PreviewPlayer(vm: AppViewModel, modifier: Modifier, zoom: Boolean = false) {
     AndroidView(
         factory = { c ->
             val v = LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView
@@ -324,7 +324,7 @@ private fun saveResume(i: StreamInfo, posMs: Long) {
 }
 
 @Composable
-private fun QualityChip(heights: List<Int>, current: Int, onPick: (Int) -> Unit) {
+fun QualityChip(heights: List<Int>, current: Int, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         Row(

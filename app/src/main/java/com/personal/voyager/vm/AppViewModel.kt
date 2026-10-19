@@ -41,6 +41,7 @@ sealed class Screen {
     data object PlayHome : Screen()
     data object Downloading : Screen()
     data object Facebook : Screen()
+    data class FbPlay(val url: String) : Screen()
 }
 
 enum class Tab { DOWNLOAD, PLAY }

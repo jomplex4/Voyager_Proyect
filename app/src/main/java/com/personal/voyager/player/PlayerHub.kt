@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.personal.voyager.core.Net
+import com.personal.voyager.fb.Facebook
 import com.personal.voyager.yt.Formats
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
@@ -132,5 +133,39 @@ object PlayerHub {
         p.prepare()
         p.playWhenReady = true
         return sel.height
+    }
+
+    private fun fbFactory(): DataSource.Factory =
+        DefaultHttpDataSource.Factory().setUserAgent(Net.UA_CHROME).setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000).setReadTimeoutMs(20_000)
+
+    /** Plays a Facebook video at [height] (or the closest quality up to it). Returns the quality used, or -1. */
+    fun loadFb(ctx: Context, info: Facebook.Info, height: Int, startMs: Long): Int {
+        val p = get(ctx)
+        val meta = MediaMetadata.Builder().setTitle(info.title).setArtist("Facebook")
+            .apply { info.thumb?.let { setArtworkUri(Uri.parse(it)) } }.build()
+        val reps = Facebook.bestReps(info)
+        val audio = info.dashAudio
+        val source: MediaSource
+        val used: Int
+        if (reps.isNotEmpty() && audio != null) {
+            val pick = reps.filter { it.first <= height }.maxByOrNull { it.first } ?: reps.first()
+            used = pick.first
+            val vs = ProgressiveMediaSource.Factory(fbFactory()).createMediaSource(
+                MediaItem.Builder().setUri(pick.second.url).setMediaMetadata(meta).build()
+            )
+            val a = ProgressiveMediaSource.Factory(fbFactory()).createMediaSource(MediaItem.fromUri(audio.url))
+            source = MergingMediaSource(vs, a)
+        } else {
+            val url = (if (height >= 720) info.hdUrl ?: info.sdUrl else info.sdUrl ?: info.hdUrl) ?: return -1
+            used = if (url == info.hdUrl) 720 else 360
+            source = ProgressiveMediaSource.Factory(fbFactory()).createMediaSource(
+                MediaItem.Builder().setUri(url).setMediaMetadata(meta).build()
+            )
+        }
+        if (startMs > 0) p.setMediaSource(source, startMs) else p.setMediaSource(source)
+        p.prepare()
+        p.playWhenReady = true
+        return used
     }
 }
