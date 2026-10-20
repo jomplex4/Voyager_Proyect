@@ -74,8 +74,7 @@ private fun isLoginPage(url: String?): Boolean {
 }
 
 /**
- * Buttons for Facebook (videos, reels, grid tiles) + light mode. On a video or reel page there is ONE download button
- * and ONE play button (fixed on the right side, away from the "open app" banner) for the video on screen. In the feed
+ * Buttons for Facebook (videos, reels, grid tiles) + light mode. On a video or reel page there is ONE download button (fixed on the right side, away from the "open app" banner) for the video on screen. In the feed
  * every video gets both; reel tiles of a channel get a small download button; plain photos get a photo button.
  * Light mode: videos do not start by themselves in the feed and page animations are off. Taps are ignored for 2.5 s.
  */
@@ -141,7 +140,6 @@ private val INJECT = """
     if (!host || host.getAttribute('data-vy')) return;
     host.setAttribute('data-vy', '1'); prep(host);
     host.appendChild(mk('', DL, function(){ withVideo(v, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-'); }); }));
-    host.appendChild(mk('vy-play', PLAY, function(){ withVideo(v, function(){ Voyager.play(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-'); }); }));
   }
   function addTile(a){
     if (a.getAttribute('data-vy')) return;
@@ -154,7 +152,6 @@ private val INJECT = """
       if (!fixed.length) {
         var u = function(){ var v = bestVideo(); return v ? permalink(v) : location.href; };
         document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.video(u(), srcOf(v), document.title, poster(v), res()); }); }));
-        document.body.appendChild(mk('vy-fixed vy-play', PLAY, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.play(u(), srcOf(v), document.title, poster(v), res()); }); }));
       }
       return;
     }
@@ -216,21 +213,6 @@ private class Bridge(private val vm: AppViewModel) {
                 sniffed != null -> vm.downloadFbSniff(sniffed, clean(title), poster.ifEmpty { null })
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap download")
                 else -> vm.downloadVideoUrl(url)
-            }
-        }
-    }
-
-    @JavascriptInterface
-    fun play(url: String, src: String, title: String, poster: String, res: String) {
-        main.post {
-            if (vm.sheet != null) return@post
-            if (res != "-") MediaSniffer.noteAll(res)
-            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick() else null
-            when {
-                src.isNotEmpty() -> vm.push(Screen.FbPlay(url, src, clean(title), poster.ifEmpty { null }))
-                sniffed != null -> vm.push(Screen.FbPlay(url, sniffed.video, clean(title), poster.ifEmpty { null }, sniffed.audio, sniffed.height))
-                !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap play")
-                else -> vm.push(Screen.FbPlay(url))
             }
         }
     }

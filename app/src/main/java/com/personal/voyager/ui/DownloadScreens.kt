@@ -324,6 +324,15 @@ private fun saveResume(i: StreamInfo, posMs: Long) {
 }
 
 @Composable
+fun FillToggle(vm: AppViewModel) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(Color(0x99000000)).clickable { vm.fillScreen = !vm.fillScreen }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { Text(if (vm.fillScreen) "Original" else "Fill", style = Txt.Label.copy(color = Pal.White)) }
+}
+
+@Composable
 fun QualityChip(heights: List<Int>, current: Int, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -391,6 +400,9 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
         }
     }
 
+    // Leaving fullscreen always returns to the video's own proportions.
+    LaunchedEffect(vm.fullscreen) { if (!vm.fullscreen) vm.fillScreen = false }
+
     // Save the position every few seconds (also while the app is in the background).
     LaunchedEffect(info) {
         val i = info ?: return@LaunchedEffect
@@ -440,9 +452,13 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
 
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            PreviewPlayer(vm, Modifier.fillMaxSize(), zoom = true)
-            if (heights.isNotEmpty() && quality > 0) {
-                Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) { QualityChip(heights, quality) { pick(it) } }
+            PreviewPlayer(vm, Modifier.fillMaxSize(), zoom = vm.fillScreen)
+            Row(
+                Modifier.align(Alignment.TopEnd).padding(12.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                FillToggle(vm)
+                if (heights.isNotEmpty() && quality > 0) QualityChip(heights, quality) { pick(it) }
             }
         }
         return

@@ -41,10 +41,6 @@ sealed class Screen {
     data object PlayHome : Screen()
     data object Downloading : Screen()
     data object Facebook : Screen()
-    data class FbPlay(
-        val url: String, val src: String? = null, val title: String? = null, val thumb: String? = null,
-        val audio: String? = null, val height: Int = 0,
-    ) : Screen()
 }
 
 enum class Tab { DOWNLOAD, PLAY }
@@ -84,6 +80,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     val dlStack = mutableStateListOf<Screen>(Screen.Home)
     val playStack = mutableStateListOf<Screen>(Screen.PlayHome)
     var fullscreen by mutableStateOf(false)
+    /** In fullscreen: false = the video with its own proportions, true = zoomed to fill the whole screen. */
+    var fillScreen by mutableStateOf(false)
     var fbLoginPrompt by mutableStateOf(false)
     val clips = mutableStateListOf<ClipLink>()
     var sheet by mutableStateOf<SheetUi?>(null)

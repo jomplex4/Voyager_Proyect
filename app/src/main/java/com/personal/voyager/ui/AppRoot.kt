@@ -174,10 +174,9 @@ private fun AppRoot(vm: AppViewModel) {
                 is Screen.PlayHome -> PlayHomeScreen(vm)
                 is Screen.Downloading -> DownloadingScreen(vm)
                 is Screen.Facebook -> FacebookScreen(vm)
-                is Screen.FbPlay -> FbPlayScreen(vm, s)
             }
         }
-        if (!fs && !imeVisible && vm.current !is Screen.Facebook && vm.current !is Screen.FbPlay) BottomBar(vm)
+        if (!fs && !imeVisible && vm.current !is Screen.Facebook) BottomBar(vm)
     }
 
     if (vm.fbLoginPrompt) {
