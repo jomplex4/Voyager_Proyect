@@ -119,6 +119,22 @@ object Mux {
             val hasVideo = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
             val dur = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             if (hasVideo != "yes" || dur <= 0) throw IOException("The video file could not be read, try another quality")
+            val ex = MediaExtractor()
+            try {
+                ex.setDataSource(path)
+                for (i in 0 until ex.trackCount) {
+                    val f = ex.getTrackFormat(i)
+                    val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                    if (!mime.startsWith("video/")) continue
+                    val probe = MediaFormat.createVideoFormat(mime, f.getInteger(MediaFormat.KEY_WIDTH), f.getInteger(MediaFormat.KEY_HEIGHT))
+                    if (android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).findDecoderForFormat(probe) == null) {
+                        throw IOException("This quality is saved in a format ($mime) that this phone cannot play. Choose another quality")
+                    }
+                    break
+                }
+            } finally {
+                ex.release()
+            }
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {

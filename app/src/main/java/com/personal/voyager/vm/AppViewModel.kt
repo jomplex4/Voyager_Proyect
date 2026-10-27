@@ -434,7 +434,12 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     /** Every quality of the video being watched (see MediaSniffer). */
     fun downloadFbSniff(p: com.personal.voyager.fb.MediaSniffer.Picked, title: String, thumb: String?) {
-        val rows = p.options.mapIndexed { i, o -> "F:Q$i" to (if (o.height > 0) "${o.height}p" else "Video") }
+        val rows = p.options.mapIndexed { i, o ->
+            val base = if (o.height > 0) "${o.height}p" else "Video"
+            val codec = if (o.codec.isNotEmpty() && o.codec != "H.264") " (${o.codec})" else ""
+            val sound = if (p.audio == null && !o.muxed) " · no sound" else ""
+            "F:Q$i" to base + codec + sound
+        }
         val files = buildString {
             p.options.forEachIndexed { i, o -> append("v\t$i\t${o.height}\t${if (o.muxed) 1 else 0}\t${o.url}\n") }
             p.audio?.let { append("a\t$it\n") }

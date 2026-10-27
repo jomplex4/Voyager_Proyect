@@ -11,7 +11,7 @@ import android.util.Base64
  * can be told apart from those of other reels loaded around it.
  */
 object MediaSniffer {
-    class Opt(val height: Int, val url: String, val muxed: Boolean)
+    class Opt(val height: Int, val url: String, val muxed: Boolean, val codec: String)
     class Picked(val options: List<Opt>, val audio: String?)
 
     private class E(
@@ -73,7 +73,14 @@ object MediaSniffer {
         list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { parse(it, now, false) }
     }
 
-    private fun codecOk(e: E) = !(e.tag.contains("vp9") || e.tag.contains("av1") || e.tag.contains("hevc") || e.tag.contains("h265"))
+    /** "H.264", "AV1", "VP9", "HEVC" or "" when the address does not say. */
+    private fun codecOf(tag: String): String = when {
+        tag.contains("av1") || tag.contains("av01") -> "AV1"
+        tag.contains("vp9") || tag.contains("vp09") -> "VP9"
+        tag.contains("hevc") || tag.contains("h265") -> "HEVC"
+        tag.contains("h264") || tag.contains("avc") -> "H.264"
+        else -> ""
+    }
 
     /**
      * The video being watched. [wantedId] is the id taken from its page address when there is one; otherwise the video
@@ -101,12 +108,20 @@ object MediaSniffer {
         }
         val vids = pool.filter { it.kind != 1 }
         if (vids.isEmpty()) return null
-        val usable = if (vids.any { codecOk(it) }) vids.filter { codecOk(it) } else vids
+        val h264 = vids.filter { codecOf(it.tag) == "H.264" }
+        val unknown = vids.filter { codecOf(it.tag).isEmpty() }
+        val usable = if (h264.isNotEmpty()) h264 + unknown else if (unknown.isNotEmpty()) unknown else vids
         val options = usable.groupBy { it.height }.map { (h, list) ->
             val best = list.sortedWith(compareBy<E>({ -it.count }, { -it.time })).first()
-            Opt(h, best.url, best.kind == 2)
+            Opt(h, best.url, best.kind == 2, codecOf(best.tag))
         }.sortedByDescending { it.height }
-        val audio = pool.filter { it.kind == 1 }.sortedWith(compareBy<E>({ -it.count }, { -it.time })).firstOrNull()?.url
+        var audio = pool.filter { it.kind == 1 }.sortedWith(compareBy<E>({ -it.count }, { -it.time })).firstOrNull()?.url
+        if (audio == null) {
+            // The sound file does not always carry the id of its video: take the one requested closest in time.
+            val at = usable.maxOfOrNull { it.time } ?: now
+            audio = seen.values.filter { it.kind == 1 && (it.asset == null || it.asset == asset) }
+                .minByOrNull { Math.abs(it.time - at) }?.url
+        }
         return Picked(options, audio)
     }
 }

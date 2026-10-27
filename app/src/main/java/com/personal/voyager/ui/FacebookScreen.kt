@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.personal.voyager.R
 import com.personal.voyager.core.Net
 import com.personal.voyager.fb.FbSession
@@ -215,6 +217,23 @@ private val INJECT = """
 })();
 """
 
+/**
+ * Tells Facebook's player that this phone cannot play AV1, VP9 or HEVC, so it sends H.264 (the format every player
+ * opens). It runs before the page's own scripts when the WebView supports it, and again when the page starts.
+ */
+private const val NO_NEW_CODECS = """
+(function(){
+  if (window.__vyCodec) return; window.__vyCodec = 1;
+  var bad = /av01|av1|vp09|vp9|hev1|hvc1|hevc/i;
+  try { var its = MediaSource.isTypeSupported; MediaSource.isTypeSupported = function(t){ return bad.test(t || '') ? false : its.call(MediaSource, t); }; } catch (e) {}
+  try { var cpt = HTMLMediaElement.prototype.canPlayType; HTMLMediaElement.prototype.canPlayType = function(t){ return bad.test(t || '') ? '' : cpt.call(this, t); }; } catch (e) {}
+  try {
+    var mc = navigator.mediaCapabilities;
+    if (mc && mc.decodingInfo) { var di = mc.decodingInfo.bind(mc); mc.decodingInfo = function(c){ if (bad.test(JSON.stringify(c || {}))) return Promise.resolve({supported: false, smooth: false, powerEfficient: false}); return di(c); }; }
+  } catch (e) {}
+})();
+"""
+
 private class Bridge(private val vm: AppViewModel) {
     private val main = Handler(Looper.getMainLooper())
     private val videoLink = Regex("/reel|/videos/|/watch|story_fbid|/posts/|permalink|/share/[vr]/|[?&]v=")
@@ -382,9 +401,13 @@ fun FacebookScreen(vm: AppViewModel) {
                         false
                     }
                     var homeTries = 0
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                        runCatching { WebViewCompat.addDocumentStartJavaScript(this, NO_NEW_CODECS, setOf("https://*.facebook.com", "https://facebook.com")) }
+                    }
                     webChromeClient = WebChromeClient()
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            view?.evaluateJavascript(NO_NEW_CODECS, null)
                             if (loggedIn && isLoginPage(url) && view != null) {
                                 // The full site sent us to the login: the saved session is not valid. Clear it and
                                 // start the login again from the simple page (no loop: the cookie is gone).

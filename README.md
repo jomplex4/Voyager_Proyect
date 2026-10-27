@@ -6,6 +6,8 @@ Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
 ## Versión 3.5
 
+**Facebook, el video no se reproducía (revisión con capturas):** el navegador interno del teléfono acepta formatos modernos (AV1 y VP9), así que Facebook enviaba el video en ese formato; pesa poco pero el teléfono no lo puede reproducir ("Cannot play this file"). Ahora se le indica a Facebook, antes de que cargue su página, que el teléfono solo reproduce H.264, que es el formato que todos los reproductores abren (y que además gasta menos batería al ver Facebook). Además: el audio se busca aunque no lleve el número de su video; en la lista cada calidad indica su formato y si no se encontró sonido; si el archivo quedara en un formato que el teléfono no reproduce, la descarga avisa con un mensaje claro en vez de dejar un archivo inútil; y los videos sin portada toman una imagen del propio video.
+
 Revisión final (auditoría línea por línea): se corrigieron el mensaje de error de archivos ilegibles (se mostraba como "sin conexión"), la lectura del código de calidad de Facebook (base64 no siempre es URL-safe), el botón Atrás de Facebook (volvía a las páginas de login), la ventana de ajustes en pantalla completa (volvía a mostrar las barras del sistema) y las reglas de R8 para que los botones de la página sigan funcionando en el APK final.
 
 - **Facebook, el video correcto:** el botón identifica el video por su número (el que aparece en la dirección del reel). Antes tomaba el que más datos había pedido, y por eso 3 descargas distintas daban el mismo archivo.

@@ -221,6 +221,23 @@ object Downloads {
         }
     }
 
+    /** A picture taken from the video itself, for downloads that come without a cover (Facebook). */
+    private fun frameThumb(id: String, f: File): String? = runCatching {
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(f.absolutePath)
+            val bmp = r.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: r.getFrameAtTime(0) ?: return null
+            val k = 480f / maxOf(bmp.width, bmp.height)
+            val small = if (k < 1f) android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt(), (bmp.height * k).toInt(), true) else bmp
+            val out = java.io.ByteArrayOutputStream()
+            small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+            Store.saveThumbBytes(id, out.toByteArray())
+        } finally {
+            runCatching { r.release() }
+        }
+    }.getOrNull()
+
     private fun cleanArtist(s: String): String =
         s.replace(Regex("\\s*-\\s*Topic$", RegexOption.IGNORE_CASE), "")
             .replace(Regex("VEVO$", RegexOption.IGNORE_CASE), "").trim()
@@ -354,7 +371,8 @@ object Downloads {
         Storage.scan(app, dest, mime)
         val thumb = withContext(Dispatchers.IO) {
             val c = cover
-            if (isAudio && c != null) Store.saveThumbBytes(id, c.thumb) else Store.saveThumb(id, job.thumb)
+            if (isAudio && c != null) Store.saveThumbBytes(id, c.thumb)
+            else Store.saveThumb(id, job.thumb) ?: (if (!isAudio) frameThumb(id, dest) else null)
         }
         Store.addDone(
             DoneItem(

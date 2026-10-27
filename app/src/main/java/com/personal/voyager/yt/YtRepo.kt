@@ -201,7 +201,7 @@ object YtRepo {
         is ContentNotSupportedException -> "This content is not supported"
         is IOException -> {
             val m = e.message ?: ""
-            if (m.startsWith("HTTP") || m.contains("could not be read") || m.contains("no video or audio") || m.contains("took too long")) m
+            if (m.startsWith("HTTP") || m.contains("could not be read") || m.contains("no video or audio") || m.contains("took too long") || m.contains("cannot play")) m
             else "No connection"
         }
         is ExtractionException -> "Could not read this video. YouTube may have changed (see README: update NewPipeExtractor)"
