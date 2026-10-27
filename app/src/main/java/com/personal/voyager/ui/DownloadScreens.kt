@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -346,7 +348,16 @@ fun PlayerSettings(vm: AppViewModel, heights: List<Int>, current: Int, onQuality
     val ctx = LocalContext.current
     var speed by remember { mutableStateOf(PlayerHub.get(ctx).playbackParameters.speed) }
     androidx.compose.ui.window.Dialog(onDismissRequest = { vm.settingsOpen = false }) {
-        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF1B1B1D)).padding(20.dp)) {
+        if (vm.fullscreen) {
+            val w = (LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            androidx.compose.runtime.SideEffect {
+                w?.let {
+                    androidx.core.view.WindowCompat.getInsetsController(it, it.decorView)
+                        .hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF1B1B1D)).verticalScroll(rememberScrollState()).padding(20.dp)) {
             if (heights.isNotEmpty() && current > 0) {
                 Text("Quality", style = Txt.Label.copy(color = Pal.Gray))
                 Spacer(Modifier.height(8.dp))
@@ -364,6 +375,15 @@ fun PlayerSettings(vm: AppViewModel, heights: List<Int>, current: Int, onQuality
                         PlayerHub.get(ctx).setPlaybackSpeed(sp)
                         vm.settingsOpen = false
                     }
+                }
+            }
+            if (vm.fullscreen) {
+                Spacer(Modifier.height(20.dp))
+                Text("Screen", style = Txt.Label.copy(color = Pal.Gray))
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    OptionChip("Original size", !vm.fillScreen) { vm.fillScreen = false; vm.settingsOpen = false }
+                    OptionChip("Fill the screen", vm.fillScreen) { vm.fillScreen = true; vm.settingsOpen = false }
                 }
             }
         }
@@ -502,12 +522,6 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     if (vm.fullscreen) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             PreviewPlayer(vm, Modifier.fillMaxSize(), zoom = vm.fillScreen)
-            Row(
-                Modifier.align(Alignment.TopEnd).padding(12.dp),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-            ) {
-                FillToggle(vm)
-            }
         }
         return
     }

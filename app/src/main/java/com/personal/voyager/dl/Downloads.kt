@@ -166,7 +166,7 @@ object Downloads {
             for (j in _jobs.value) {
                 if (slots <= 0) break
                 if (j.status == JobStatus.QUEUED && !running.containsKey(j.id)) {
-                    update(j.id, true) { it.copy(status = JobStatus.ACTIVE, progress = 0f, speedBps = 0, error = null) }
+                    update(j.id, true) { it.copy(status = JobStatus.ACTIVE, speedBps = 0, error = null) }
                     running[j.id] = scope.launch {
                         try {
                             runJob(j.id)
@@ -246,6 +246,13 @@ object Downloads {
 
         val files = plan.sources.indices.map { File(tmp, "$id.$it.part") }
         val meter = Meter()
+        // Resuming: what is already on disk counts at once (the bar does not go back to zero) and the speed starts from it.
+        val have0 = files.sumOf { if (it.exists()) it.length() else 0L }
+        if (have0 > 0) {
+            meter.lastB = have0
+            val f0 = if (expected > 0) (have0.toDouble() / expected).coerceIn(0.0, 1.0) else 0.0
+            update(id) { it.copy(downloaded = have0, progress = (f0 * 0.95).toFloat()) }
+        }
 
         fun tick() {
             val now = System.currentTimeMillis()
@@ -277,7 +284,7 @@ object Downloads {
                 launch(Dispatchers.IO) {
                     val src = plan.sources[i]
                     val sigFile = File(tmp, "$id.$i.sig")
-                    if (sigFile.exists() && sigFile.readText() != src.sig) files[i].delete()
+                    if (sigFile.exists() && sigFile.readText().substringBeforeLast(':') != src.sig.substringBeforeLast(':')) files[i].delete()
                     sigFile.writeText(src.sig)
                     Fetcher(src) {
                         Resolver.resolve(job, allowWebm = !(plan is Plan.Merge && !plan.webm), fresh = true).sources[i]
@@ -304,6 +311,7 @@ object Downloads {
                 out = File(tmp, "$id.out.$ext")
                 withContext(Dispatchers.IO) {
                     Bg.low { Mux.mergeVideoAudio(files[0].absolutePath, files[1].absolutePath, out.absolutePath, plan.webm, check) { proc(it) } }
+                    if (plan.video.sig.startsWith("fb")) Mux.validateVideo(out.absolutePath)
                 }
             }
             is Plan.Direct -> {
@@ -314,6 +322,7 @@ object Downloads {
                     out = File(tmp, "$id.out.mp4")
                     withContext(Dispatchers.IO) {
                         Bg.low { Mux.remuxToMp4(files[0].absolutePath, out.absolutePath, check) { proc(it) } }
+                        Mux.validateVideo(out.absolutePath)
                     }
                 } else out = files[0]
             }

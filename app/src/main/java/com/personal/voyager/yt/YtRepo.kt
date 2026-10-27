@@ -199,7 +199,11 @@ object YtRepo {
         is PrivateContentException -> "This video is private"
         is ContentNotAvailableException -> "This video is private or has been removed"
         is ContentNotSupportedException -> "This content is not supported"
-        is IOException -> if (e.message?.startsWith("HTTP") == true) (e.message ?: "Network error") else "No connection"
+        is IOException -> {
+            val m = e.message ?: ""
+            if (m.startsWith("HTTP") || m.contains("could not be read") || m.contains("no video or audio") || m.contains("took too long")) m
+            else "No connection"
+        }
         is ExtractionException -> "Could not read this video. YouTube may have changed (see README: update NewPipeExtractor)"
         else -> e.message ?: "Something went wrong"
     }

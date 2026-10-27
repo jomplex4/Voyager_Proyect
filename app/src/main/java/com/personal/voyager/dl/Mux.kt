@@ -111,6 +111,23 @@ object Mux {
     }
 
     /** Re-muxes the first audio track of any container into a clean .m4a (MPEG-4) file. */
+    /** Throws when the file has no readable video: better a clear error than a broken file in the list. */
+    fun validateVideo(path: String) {
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(path)
+            val hasVideo = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
+            val dur = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            if (hasVideo != "yes" || dur <= 0) throw IOException("The video file could not be read, try another quality")
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException("The video file could not be read, try another quality")
+        } finally {
+            runCatching { r.release() }
+        }
+    }
+
     /** Copies every video/audio track of a (fragmented) MP4 into a normal MP4 that any player opens. */
     fun remuxToMp4(inPath: String, outPath: String, check: () -> Unit, onProgress: (Float) -> Unit) {
         val ex = MediaExtractor()

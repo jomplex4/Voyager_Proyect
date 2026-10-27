@@ -1,7 +1,7 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.4, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 3.5, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
 
 ## 2. Tecnología
 - Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
@@ -35,6 +35,8 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
 - FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
 - FB LOGIN (2.16, LEER): solo funcionó el orden m(hardware), m(software), www(escritorio), mbasic(software) con 7 s entre modos, SIN borrar cookies: las primeras páginas dejan cookies que mbasic necesita. No volver a saltar directo a mbasic ni a llamar FbSession.logout() automáticamente (rompió el login en 2.13-2.15). Escape manual: mantener presionada la flecha.
+- 3.5 (auditoría): `friendly()` ya muestra los mensajes propios de IOException; `-keepclassmembers @JavascriptInterface` en proguard; `clearHistory()` tras abrir m.facebook.com; ventana de ajustes oculta barras en pantalla completa; efg se decodifica con base64 normalizado.
+- 3.5: MediaSniffer reescrito: cada archivo trae el id del video en `efg` (`xpv_asset_id`); `pick(id)` elige por el id del reel (antes por conteo: bajaba el mismo reel 3 veces) y lista todas las calidades (URLs vistas en peticiones + datos de la página recogidos por el script con hooks de fetch/XHR y scripts, enviados como 6.º parámetro de `Voyager.video`). Fuente "fbsniff": líneas `v\tindice\talto\tmuxed\turl` y `a\turl`; choice `F:Q<indice>`. `Mux.validateVideo` comprueba el MP4 de Facebook. Reanudar: progreso inicial desde el parcial. Engranaje = Calidad/Velocidad/Pantalla.
 - 3.4: pantallas guardan su estado en el ViewModel (`vm.keepOf`, se borra al hacer pop) para no recargar al volver; calidad/velocidad en un diálogo abierto por el engranaje (`exo_settings`, `vm.settingsOpen`); NewPipe en es/PE; FB: nombres únicos (`fbName`, antes duplicados por título igual), `Plan.Direct(remux=true)` + `Mux.remuxToMp4`, hoja de formatos inmediata.
 - FB 3.3: reproductor de Facebook ELIMINADO a pedido de Redy (solo descarga). `FbPlayScreen.kt` queda vacío a propósito (no se borran archivos). YouTube: pantalla completa = proporción original; `vm.fillScreen` (botón Fill/Original) = zoom que llena la pantalla.
 - FB 3.2: la lectura de la página falla (Facebook usa blob/MSE, `currentSrc` vacío). Solución: `fb/MediaSniffer.kt` observa los .mp4 de fbcdn (shouldInterceptRequest + `performance.getEntriesByType('resource')` del script), quita bytestart/byteend y elige el video/audio más pedido y reciente. Fuentes de descarga: "fbsniff" (url = video\naudio), "fbsrc" (archivo directo), "fb" (lectura de página, último recurso). Si deja de funcionar, ver qué .mp4 pide el reproductor (ajustar la clasificación por el parámetro `efg`).
@@ -47,6 +49,8 @@ Descargador personal de YouTube y Facebook para Android (alternativa sin anuncio
 - FB bajaba la portada del reel: un solo botón fijo en páginas de video.
 
 ## 7. Pendientes
+- YouTube: si al abrir un video se pausa solo, probable estrangulamiento de YouTube (subir `newpipe`, ver sección 9); ajustar buffers en `PlayerHub.get`.
+- Facebook: no se pudo comprobar en un teléfono que los archivos descargados se reproduzcan; si no, revisar `Mux.validateVideo` y el mensaje que muestre.
 - Facebook cambia su página seguido: si fallan botones o login, ajustar INJECT y MODES en FacebookScreen.kt.
 - Nada se compila ni ejecuta localmente; cada cambio se valida con el build de GitHub y pruebas de Redy.
 

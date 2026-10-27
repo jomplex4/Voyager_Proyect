@@ -91,6 +91,29 @@ private val INJECT = """
   document.head.appendChild(st);
   var last = 0;
   window.__vyTouch = 0;
+  var urlSet = {}, urlN = 0;
+  function harvest(text){
+    if (!text || text.length > 4000000 || text.indexOf('.mp4') < 0) return;
+    var t = text.split('\\/').join('/').split('\\u0025').join('%').split('\\u0026').join('&').split('&amp;').join('&');
+    var re = /https:\/\/[^"'\s\\<>]+?\.mp4[^"'\s\\<>]*/g, m;
+    while ((m = re.exec(t)) && urlN < 1500) { var u = m[0]; if (/fbcdn|facebook/.test(u) && !urlSet[u]) { urlSet[u] = 1; urlN++; } }
+  }
+  var ofetch = window.fetch;
+  if (ofetch) window.fetch = function(){
+    var p = ofetch.apply(this, arguments);
+    try { p.then(function(r){ try { var ct = r.headers.get('content-type') || ''; if (/graphql|video|reel|watch/.test(r.url || '') && /json|text|javascript/.test(ct)) r.clone().text().then(harvest); } catch (e) {} }); } catch (e) {}
+    return p;
+  };
+  var oxs = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function(){
+    this.addEventListener('load', function(){ try { if (this.responseType === '' || this.responseType === 'text') harvest(this.responseText); } catch (e) {} });
+    return oxs.apply(this, arguments);
+  };
+  function all(){
+    var sc = document.scripts, tot = 0;
+    for (var i = 0; i < sc.length; i++) { var x = sc[i].textContent; if (x && x.indexOf('.mp4') >= 0) { tot += x.length; if (tot > 6000000) break; harvest(x); } }
+    return Object.keys(urlSet).slice(-800).join('\n');
+  }
   document.addEventListener('touchstart', function(){ window.__vyTouch = Date.now(); }, true);
   var op = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function(){
@@ -139,19 +162,19 @@ private val INJECT = """
   function add(host, getUrl, v){
     if (!host || host.getAttribute('data-vy')) return;
     host.setAttribute('data-vy', '1'); prep(host);
-    host.appendChild(mk('', DL, function(){ withVideo(v, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-'); }); }));
+    host.appendChild(mk('', DL, function(){ withVideo(v, function(){ Voyager.video(getUrl(), srcOf(v), document.title, poster(v), v ? res() : '-', v ? all() : ''); }); }));
   }
   function addTile(a){
     if (a.getAttribute('data-vy')) return;
     a.setAttribute('data-vy', '1'); prep(a);
-    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href, '', document.title, '', '-'); }));
+    a.appendChild(mk('vy-sm', DL, function(){ Voyager.video(a.href, '', document.title, '', '-', ''); }));
   }
   function scan(){
     var fixed = document.querySelectorAll('.vy-fixed');
     if (VIDEO_PAGE.test(location.pathname + location.search)) {
       if (!fixed.length) {
         var u = function(){ var v = bestVideo(); return v ? permalink(v) : location.href; };
-        document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.video(u(), srcOf(v), document.title, poster(v), res()); }); }));
+        document.body.appendChild(mk('vy-fixed', DL, function(){ var v = bestVideo(); withVideo(v, function(){ Voyager.video(u(), srcOf(v), document.title, poster(v), res(), all()); }); }));
       }
       return;
     }
@@ -203,11 +226,15 @@ private class Bridge(private val vm: AppViewModel) {
      * player asked for ("-" for a grid tile: nothing is playing, so the page is read instead).
      */
     @JavascriptInterface
-    fun video(url: String, src: String, title: String, poster: String, res: String) {
+    fun video(url: String, src: String, title: String, poster: String, res: String, all: String) {
         main.post {
             if (vm.sheet != null) return@post
-            if (res != "-") MediaSniffer.noteAll(res)
-            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick() else null
+            if (res != "-") {
+                MediaSniffer.noteAll(res)
+                MediaSniffer.noteAvailable(all)
+            }
+            val id = Regex("(?:/reel/|/videos/|[?&]v=)(\\d{6,})").find(url)?.groupValues?.get(1)
+            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick(id) else null
             when {
                 src.isNotEmpty() -> vm.downloadFbSrc(src, url, clean(title), poster.ifEmpty { null })
                 sniffed != null -> vm.downloadFbSniff(sniffed, clean(title), poster.ifEmpty { null })
@@ -275,7 +302,7 @@ fun FacebookScreen(vm: AppViewModel) {
     var defaultUa by remember { mutableStateOf("") }
     var dbg by remember { mutableStateOf("") }
     var touched by remember { mutableStateOf(false) }
-    var resetRef: () -> Unit = {}
+    var freshHome by remember { mutableStateOf(false) }
 
     fun useMode(w: WebView, i: Int) {
         val m = MODES[i]
@@ -283,6 +310,7 @@ fun FacebookScreen(vm: AppViewModel) {
         if (loggedIn) {
             w.settings.userAgentString = defaultUa
             w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            freshHome = true
             w.loadUrl(HOME)
         } else {
             w.settings.userAgentString = if (m.desktop) Net.UA_CHROME else defaultUa
@@ -294,6 +322,7 @@ fun FacebookScreen(vm: AppViewModel) {
     fun goHome(w: WebView) {
         w.settings.userAgentString = defaultUa
         w.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        freshHome = true
         w.loadUrl(HOME)
     }
 
@@ -330,7 +359,6 @@ fun FacebookScreen(vm: AppViewModel) {
         scheduleCheck(w, 0)
         vm.say("Login reset")
     }
-    resetRef = { resetLogin() }
 
     BackHandler {
         val w = web
@@ -379,6 +407,10 @@ fun FacebookScreen(vm: AppViewModel) {
                                 cm.flush()
                                 val onMobile = android.net.Uri.parse(u).host == "m.facebook.com"
                                 loggedIn = true
+                                if (onMobile && freshHome && view != null) {
+                                    view.clearHistory() // Back must not return to the login pages
+                                    freshHome = false
+                                }
                                 if (!onMobile && homeTries < 3 && view != null) {
                                     homeTries++
                                     goHome(view) // logged in from any mode: continue on the mobile site

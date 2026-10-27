@@ -32,3 +32,9 @@
 -dontwarn org.checkerframework.**
 -dontwarn org.codehaus.mojo.animal_sniffer.**
 -ignorewarnings
+
+# Methods the Facebook page calls through the JavaScript bridge (called by name, never from Kotlin)
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

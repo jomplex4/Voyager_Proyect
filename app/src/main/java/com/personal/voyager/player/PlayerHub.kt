@@ -41,7 +41,7 @@ object PlayerHub {
             val p = ExoPlayer.Builder(ctx.applicationContext)
                 .setLoadControl(
                     DefaultLoadControl.Builder()
-                        .setBufferDurationsMs(15_000, 30_000, 1_500, 3_000)
+                        .setBufferDurationsMs(25_000, 50_000, 2_500, 5_000)
                         .build()
                 )
                 .setAudioAttributes(

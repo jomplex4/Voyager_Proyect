@@ -58,27 +58,39 @@ object Resolver {
         return Plan.Merge(src(sel.video!!), src(sel.audio!!), sel.webm, tag)
     }
 
-    /** job.url = video address, a line break, and the audio address (empty when the file already has sound). */
+    /** job.url = one line per quality ("v", index, height, muxed, address) and one line "a" with the audio address. */
     private suspend fun resolveSniff(job: DlJob): Plan {
-        val parts = job.url.split("\n")
-        val v = parts[0]
-        val a = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+        class V(val i: Int, val h: Int, val muxed: Boolean, val url: String)
+        val vids = ArrayList<V>()
+        var audio: String? = null
+        for (l in job.url.split("\n")) {
+            val p = l.split("\t")
+            when (p.firstOrNull()) {
+                "v" -> if (p.size >= 5) vids.add(V(p[1].toIntOrNull() ?: 0, p[2].toIntOrNull() ?: 0, p[3] == "1", p[4]))
+                "a" -> if (p.size >= 2) audio = p[1]
+            }
+        }
+        if (vids.isEmpty()) throw Facebook.FbException(Facebook.NOT_AVAILABLE)
         fun mk(url: String, size: Long) = Src(url, size, "fbs:$size", Net.UA_CHROME)
         if (job.choice.startsWith("A:")) {
             val k = AudioKind.fromTag(job.choice.substring(2))
-            val u = a ?: v
+            val u = audio ?: vids.first().url
             val s = mk(u, Facebook.probeSize(u))
             return if (k.mp3) Plan.Mp3(s, k.kbps, k.tag) else Plan.M4a(s, k.tag)
         }
-        if (a != null) {
+        val want = job.choice.removePrefix("F:Q").toIntOrNull() ?: 0
+        val v = vids.firstOrNull { it.i == want } ?: vids.first()
+        val tag = if (v.h > 0) "${v.h}P" else "FB"
+        val a = audio
+        if (!v.muxed && a != null) {
             val (vs, asz) = kotlinx.coroutines.coroutineScope {
-                val x = async { Facebook.probeSize(v) }
+                val x = async { Facebook.probeSize(v.url) }
                 val y = async { Facebook.probeSize(a) }
                 x.await() to y.await()
             }
-            return Plan.Merge(mk(v, vs), mk(a, asz), false, "FB")
+            return Plan.Merge(mk(v.url, vs), mk(a, asz), false, tag)
         }
-        return Plan.Direct(mk(v, Facebook.probeSize(v)), "video/mp4", "mp4", true, "FB", remux = true)
+        return Plan.Direct(mk(v.url, Facebook.probeSize(v.url)), "video/mp4", "mp4", true, tag, remux = true)
     }
 
     private suspend fun resolveSrc(job: DlJob): Plan {

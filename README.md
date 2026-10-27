@@ -4,6 +4,17 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 3.5
+
+Revisión final (auditoría línea por línea): se corrigieron el mensaje de error de archivos ilegibles (se mostraba como "sin conexión"), la lectura del código de calidad de Facebook (base64 no siempre es URL-safe), el botón Atrás de Facebook (volvía a las páginas de login), la ventana de ajustes en pantalla completa (volvía a mostrar las barras del sistema) y las reglas de R8 para que los botones de la página sigan funcionando en el APK final.
+
+- **Facebook, el video correcto:** el botón identifica el video por su número (el que aparece en la dirección del reel). Antes tomaba el que más datos había pedido, y por eso 3 descargas distintas daban el mismo archivo.
+- **Facebook, todas las calidades:** además de la que se está reproduciendo, la app lee las demás calidades que trae la página (144p a la máxima) y las muestra con su peso estimado para que elijas.
+- **Facebook, archivo ilegible:** al terminar, la app comprueba que el video se pueda leer; si no, lo marca como fallido con un mensaje claro en vez de dejar un archivo roto.
+- **Pausar y reanudar:** lo ya descargado cuenta de inmediato y la barra ya no vuelve a cero (parecía reiniciar); el archivo parcial ya no se borra por un cambio en la firma del enlace.
+- **YouTube, engranaje:** Calidad, Velocidad y (en pantalla completa) Tamaño original o Llenar pantalla. Se quitó el botón flotante.
+- **YouTube, arranque:** el reproductor junta más datos antes de empezar y antes de reanudar tras una pausa por falta de datos.
+
 ## Versión 3.4
 
 - **YouTube, volver atrás:** al regresar de un video, la búsqueda, el canal o la lista vuelven tal como estaban (mismos videos cargados, misma posición); ya no se recargan desde el inicio.
@@ -186,8 +197,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v3.4
-git push origin v3.4
+git tag v3.5
+git push origin v3.5
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -213,7 +224,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.4`, `git push origin v3.4`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.5`, `git push origin v3.5`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 

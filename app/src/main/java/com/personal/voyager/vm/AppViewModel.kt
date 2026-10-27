@@ -400,44 +400,55 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private fun fbSheet(
-        title0: String, thumb: String?, rowId: String, label: String, files: String, source: String, sizeOf: suspend () -> Long,
+        title0: String, thumb: String?, rows: List<Pair<String, String>>, preselect: String,
+        files: String, source: String, sizeOf: suspend () -> List<Long>,
     ) {
         sheetJob?.cancel()
         val title = fbName(title0)
         val audio = AudioKind.entries.map { k ->
             SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", "", true)
         }
-        fun row(total: Long) = listOf(SheetRow(rowId, label, "As played on Facebook", if (total > 0) Fmt.size(total) else "", false))
+        fun build(sizes: List<Long>) = rows.mapIndexed { i, r ->
+            val sz = sizes.getOrElse(i) { -1L }
+            SheetRow(r.first, r.second, null, if (sz > 0) Fmt.size(sz) else "", false)
+        }
         val data = SheetData(
             title = title, thumb = thumb, domain = "facebook.com", fromClipboard = false,
-            audioInit = audio, videoInit = row(-1), preselect = rowId,
+            audioInit = audio, videoInit = build(emptyList()), preselect = preselect,
         ) { choice ->
             enqueue(listOf(Spec(source, files, title, thumb, 0L, choice, uploader = "Facebook")))
         }
-        sheet = SheetUi.Ready(data) // the list opens at once; the size appears when it is known
+        sheet = SheetUi.Ready(data) // the list opens at once; the sizes appear when they are known
         sheetJob = viewModelScope.launch {
-            val total = sizeOf()
-            if (total > 0) data.video = row(total)
+            val sizes = sizeOf()
+            if (sizes.any { it > 0 }) data.video = build(sizes)
         }
     }
 
     /** The page already had the video file: no page download, only a tiny request for the size. */
     fun downloadFbSrc(src: String, pageUrl: String, title: String, thumb: String?) {
-        fbSheet(title, thumb, "F:SRC", "Video", src, "fbsrc") {
-            kotlinx.coroutines.withTimeoutOrNull(15_000) { Facebook.probeSize(src) } ?: -1L
+        fbSheet(title, thumb, listOf("F:SRC" to "Video"), "F:SRC", src, "fbsrc") {
+            listOf(kotlinx.coroutines.withTimeoutOrNull(15_000) { Facebook.probeSize(src) } ?: -1L)
         }
     }
 
-    /** The files the Facebook player itself was loading (see MediaSniffer). */
+    /** Every quality of the video being watched (see MediaSniffer). */
     fun downloadFbSniff(p: com.personal.voyager.fb.MediaSniffer.Picked, title: String, thumb: String?) {
-        val label = if (p.height > 0) "${p.height}p" else "Video"
-        fbSheet(title, thumb, "F:SNIFF", label, p.video + "\n" + (p.audio ?: ""), "fbsniff") {
+        val rows = p.options.mapIndexed { i, o -> "F:Q$i" to (if (o.height > 0) "${o.height}p" else "Video") }
+        val files = buildString {
+            p.options.forEachIndexed { i, o -> append("v\t$i\t${o.height}\t${if (o.muxed) 1 else 0}\t${o.url}\n") }
+            p.audio?.let { append("a\t$it\n") }
+        }
+        val pre = p.options.indexOfFirst { it.height == 720 }.let { if (it >= 0) it else 0 }
+        fbSheet(title, thumb, rows, "F:Q$pre", files, "fbsniff") {
             coroutineScope {
-                val x = async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(p.video) } ?: -1L }
-                val y = async { p.audio?.let { a -> kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(a) } } ?: -1L }
-                val vs = x.await()
-                val asz = y.await()
-                if (vs > 0) vs + maxOf(asz, 0L) else -1L
+                val au = p.audio?.let { u -> async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(u) } ?: -1L } }
+                val vs = p.options.map { o -> async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(o.url) } ?: -1L } }
+                val asz = au?.await() ?: 0L
+                vs.mapIndexed { i, d ->
+                    val v = d.await()
+                    if (v > 0) v + (if (p.options[i].muxed) 0L else maxOf(asz, 0L)) else -1L
+                }
             }
         }
     }
