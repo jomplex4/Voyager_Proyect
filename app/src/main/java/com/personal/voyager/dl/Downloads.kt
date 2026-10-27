@@ -309,7 +309,13 @@ object Downloads {
             is Plan.Direct -> {
                 ext = plan.ext
                 mime = plan.mime
-                out = files[0]
+                if (plan.remux) {
+                    // Facebook files come in a streaming layout many players refuse: rewrite them as a normal MP4.
+                    out = File(tmp, "$id.out.mp4")
+                    withContext(Dispatchers.IO) {
+                        Bg.low { Mux.remuxToMp4(files[0].absolutePath, out.absolutePath, check) { proc(it) } }
+                    }
+                } else out = files[0]
             }
             is Plan.M4a -> {
                 ext = "m4a"

@@ -111,6 +111,53 @@ object Mux {
     }
 
     /** Re-muxes the first audio track of any container into a clean .m4a (MPEG-4) file. */
+    /** Copies every video/audio track of a (fragmented) MP4 into a normal MP4 that any player opens. */
+    fun remuxToMp4(inPath: String, outPath: String, check: () -> Unit, onProgress: (Float) -> Unit) {
+        val ex = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        var started = false
+        try {
+            ex.setDataSource(inPath)
+            muxer = MediaMuxer(outPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val map = HashMap<Int, Int>()
+            var maxIn = 1 shl 20
+            var durUs = 0L
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+                    ex.selectTrack(i)
+                    map[i] = muxer.addTrack(f)
+                    if (f.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) maxIn = maxOf(maxIn, f.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                    if (f.containsKey(MediaFormat.KEY_DURATION)) durUs = maxOf(durUs, f.getLong(MediaFormat.KEY_DURATION))
+                }
+            }
+            if (map.isEmpty()) throw IOException("The downloaded file has no video or audio track")
+            muxer.start()
+            started = true
+            val buf = ByteBuffer.allocate(maxIn)
+            val info = MediaCodec.BufferInfo()
+            var n = 0
+            while (true) {
+                if ((n++ and 63) == 0) check()
+                val track = ex.sampleTrackIndex
+                if (track < 0) break
+                buf.clear()
+                val size = ex.readSampleData(buf, 0)
+                if (size < 0) break
+                val flags = if (ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                info.set(0, size, ex.sampleTime, flags)
+                muxer.writeSampleData(map[track] ?: break, buf, info)
+                if (durUs > 0 && n % 200 == 0) onProgress((ex.sampleTime.toFloat() / durUs).coerceIn(0f, 1f))
+                ex.advance()
+            }
+        } finally {
+            runCatching { if (started) muxer?.stop() }
+            runCatching { muxer?.release() }
+            ex.release()
+        }
+    }
+
     fun remuxAudioToM4a(inPath: String, outPath: String, check: () -> Unit, onProgress: (Float) -> Unit) {
         val ex = MediaExtractor()
         var muxer: MediaMuxer? = null

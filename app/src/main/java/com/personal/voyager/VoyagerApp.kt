@@ -16,7 +16,7 @@ class VoyagerApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
-        NewPipe.init(NewPipeDownloader(), Localization("en", "US"), ContentCountry("US"))
+        NewPipe.init(NewPipeDownloader(), Localization("es", "PE"), ContentCountry("PE"))
         Downloads.init(this)
         runCatching { getSystemService(android.app.NotificationManager::class.java).deleteNotificationChannel("downloads") }
     }

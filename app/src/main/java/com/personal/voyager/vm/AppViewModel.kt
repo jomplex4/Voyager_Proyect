@@ -105,6 +105,26 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun stack() = if (tab == Tab.DOWNLOAD) dlStack else playStack
     val current: Screen get() = stack().last()
 
+    /** Work that must survive leaving a screen and coming back (lists, loaded pages, scroll). */
+    val uiScope: kotlinx.coroutines.CoroutineScope get() = viewModelScope
+    private val keep = HashMap<String, Any>()
+
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> keepOf(key: String, make: () -> T): T = keep.getOrPut(key) { make() } as T
+
+    private fun forget(s: Screen) {
+        val p = when (s) {
+            is Screen.Results -> "res:${s.query}:"
+            is Screen.Channel -> "ch:${s.url}:"
+            is Screen.Playlist -> "pl:${s.url}:"
+            else -> return
+        }
+        keep.keys.removeAll { it.startsWith(p) }
+    }
+
+    /** True while the player settings (quality, speed) are open. */
+    var settingsOpen by mutableStateOf(false)
+
     fun push(s: Screen) {
         stack().add(s)
     }
@@ -113,19 +133,19 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun pop(): Boolean {
         val st = stack()
         if (st.size > 1) {
-            st.removeAt(st.lastIndex)
+            forget(st.removeAt(st.lastIndex))
             return true
         }
         return false
     }
 
     fun popToHome() {
-        while (dlStack.size > 1) dlStack.removeAt(dlStack.lastIndex)
+        while (dlStack.size > 1) forget(dlStack.removeAt(dlStack.lastIndex))
     }
 
     fun popToRoot() {
         val st = stack()
-        while (st.size > 1) st.removeAt(st.lastIndex)
+        while (st.size > 1) forget(st.removeAt(st.lastIndex))
     }
 
     fun say(msg: String) {
@@ -369,52 +389,56 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The page already had the video file: only its size is asked (one tiny request), no page download. */
-    fun downloadFbSrc(src: String, pageUrl: String, title: String, thumb: String?) {
+    /** Facebook pages all share the same title ("Facebook", "Reels"): every file gets its own name or it is taken as a duplicate. */
+    private fun fbName(raw: String): String {
+        val t = raw.trim()
+        val low = t.lowercase()
+        val generic = t.isEmpty() || low == "facebook" || low == "watch" || low == "video" || low.startsWith("reels") ||
+            low.startsWith("facebook video") || (low.startsWith("facebook") && low.length < 16)
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH.mm.ss", java.util.Locale.US).format(java.util.Date())
+        return if (generic) "Facebook video $stamp" else t.take(90) + " " + stamp.substring(11)
+    }
+
+    private fun fbSheet(
+        title0: String, thumb: String?, rowId: String, label: String, files: String, source: String, sizeOf: suspend () -> Long,
+    ) {
         sheetJob?.cancel()
-        sheet = SheetUi.Loading
+        val title = fbName(title0)
+        val audio = AudioKind.entries.map { k ->
+            SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", "", true)
+        }
+        fun row(total: Long) = listOf(SheetRow(rowId, label, "As played on Facebook", if (total > 0) Fmt.size(total) else "", false))
+        val data = SheetData(
+            title = title, thumb = thumb, domain = "facebook.com", fromClipboard = false,
+            audioInit = audio, videoInit = row(-1), preselect = rowId,
+        ) { choice ->
+            enqueue(listOf(Spec(source, files, title, thumb, 0L, choice, uploader = "Facebook")))
+        }
+        sheet = SheetUi.Ready(data) // the list opens at once; the size appears when it is known
         sheetJob = viewModelScope.launch {
-            val size = kotlinx.coroutines.withTimeoutOrNull(15_000) { Facebook.probeSize(src) } ?: -1L
-            val audio = AudioKind.entries.map { k ->
-                SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", "", true)
-            }
-            val video = listOf(SheetRow("F:SRC", "Video", "As played on Facebook", Fmt.size(size), false))
-            sheet = SheetUi.Ready(
-                SheetData(
-                    title = title, thumb = thumb, domain = "facebook.com", fromClipboard = false,
-                    audioInit = audio, videoInit = video, preselect = "F:SRC",
-                ) { choice ->
-                    enqueue(listOf(Spec("fbsrc", src, title, thumb, 0L, choice, uploader = "Facebook")))
-                }
-            )
+            val total = sizeOf()
+            if (total > 0) data.video = row(total)
         }
     }
 
-    /** The files the Facebook player itself was loading (see MediaSniffer): sizes are asked, the page is not read. */
+    /** The page already had the video file: no page download, only a tiny request for the size. */
+    fun downloadFbSrc(src: String, pageUrl: String, title: String, thumb: String?) {
+        fbSheet(title, thumb, "F:SRC", "Video", src, "fbsrc") {
+            kotlinx.coroutines.withTimeoutOrNull(15_000) { Facebook.probeSize(src) } ?: -1L
+        }
+    }
+
+    /** The files the Facebook player itself was loading (see MediaSniffer). */
     fun downloadFbSniff(p: com.personal.voyager.fb.MediaSniffer.Picked, title: String, thumb: String?) {
-        sheetJob?.cancel()
-        sheet = SheetUi.Loading
-        sheetJob = viewModelScope.launch {
-            val (vs, asz) = coroutineScope {
+        val label = if (p.height > 0) "${p.height}p" else "Video"
+        fbSheet(title, thumb, "F:SNIFF", label, p.video + "\n" + (p.audio ?: ""), "fbsniff") {
+            coroutineScope {
                 val x = async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(p.video) } ?: -1L }
                 val y = async { p.audio?.let { a -> kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(a) } } ?: -1L }
-                x.await() to y.await()
+                val vs = x.await()
+                val asz = y.await()
+                if (vs > 0) vs + maxOf(asz, 0L) else -1L
             }
-            val audio = AudioKind.entries.map { k ->
-                SheetRow("A:" + k.tag, k.label, if (k.mp3) MP3_SUB else "Fast, ideal for mobile", "", true)
-            }
-            val total = if (vs > 0) vs + maxOf(asz, 0L) else -1L
-            val label = if (p.height > 0) "${p.height}p" else "Video"
-            val video = listOf(SheetRow("F:SNIFF", label, "As played on Facebook", Fmt.size(total), false))
-            val files = p.video + "\n" + (p.audio ?: "")
-            sheet = SheetUi.Ready(
-                SheetData(
-                    title = title, thumb = thumb, domain = "facebook.com", fromClipboard = false,
-                    audioInit = audio, videoInit = video, preselect = "F:SNIFF",
-                ) { choice ->
-                    enqueue(listOf(Spec("fbsniff", files, title, thumb, 0L, choice, uploader = "Facebook")))
-                }
-            )
         }
     }
 

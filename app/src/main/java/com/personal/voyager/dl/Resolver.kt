@@ -78,7 +78,7 @@ object Resolver {
             }
             return Plan.Merge(mk(v, vs), mk(a, asz), false, "FB")
         }
-        return Plan.Direct(mk(v, Facebook.probeSize(v)), "video/mp4", "mp4", true, "FB")
+        return Plan.Direct(mk(v, Facebook.probeSize(v)), "video/mp4", "mp4", true, "FB", remux = true)
     }
 
     private suspend fun resolveSrc(job: DlJob): Plan {
@@ -87,7 +87,7 @@ object Resolver {
             val k = AudioKind.fromTag(job.choice.substring(2))
             return if (k.mp3) Plan.Mp3(s, k.kbps, k.tag) else Plan.M4a(s, k.tag)
         }
-        return Plan.Direct(s, "video/mp4", "mp4", true, "FB")
+        return Plan.Direct(s, "video/mp4", "mp4", true, "FB", remux = true)
     }
 
     private suspend fun resolveFb(job: DlJob, fresh: Boolean): Plan {

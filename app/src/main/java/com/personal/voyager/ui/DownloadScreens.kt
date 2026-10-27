@@ -1,9 +1,14 @@
 package com.personal.voyager.ui
 
 import android.content.Intent
+import android.view.View
 import android.view.LayoutInflater
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -250,9 +255,10 @@ fun ItemList(
     pager: Pager,
     modifier: Modifier = Modifier,
     header: (LazyListScope.() -> Unit)? = null,
+    state: LazyListState = rememberLazyListState(),
 ) {
     LaunchedEffect(pager) { pager.ensureStarted() }
-    LazyColumn(modifier.fillMaxSize()) {
+    LazyColumn(modifier.fillMaxSize(), state = state) {
         header?.invoke(this)
         itemsIndexed(pager.items) { _, item -> ItemRow(vm, item) }
         item {
@@ -272,10 +278,10 @@ fun ItemList(
 
 @Composable
 fun ResultsScreen(vm: AppViewModel, query: String) {
-    var tab by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
+    // Everything below is kept in the ViewModel: coming back from a video shows the same list at the same place.
+    var tab by vm.keepOf("res:$query:tab") { mutableIntStateOf(0) }
     val filters = listOf(YtRepo.ALL, YtRepo.CHANNELS, YtRepo.PLAYLISTS)
-    val pagers = remember(query) { filters.map { f -> Pager(scope) { page -> YtRepo.search(query, f, page) } } }
+    val pagers = vm.keepOf("res:$query:pagers") { filters.map { f -> Pager(vm.uiScope) { page -> YtRepo.search(query, f, page) } } }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -289,7 +295,7 @@ fun ResultsScreen(vm: AppViewModel, query: String) {
         }
         Tabs(listOf("All", "Channels", "Playlists"), tab, { tab = it })
         Spacer(Modifier.height(4.dp))
-        ItemList(vm, pagers[tab])
+        ItemList(vm, pagers[tab], state = vm.keepOf("res:$query:list$tab") { LazyListState() })
     }
 }
 
@@ -302,6 +308,8 @@ fun PreviewPlayer(vm: AppViewModel, modifier: Modifier, zoom: Boolean = false) {
             val v = LayoutInflater.from(c).inflate(R.layout.player_view, null, false) as PlayerView
             v.player = PlayerHub.get(c)
             v.setFullscreenButtonClickListener { fs -> vm.fullscreen = fs }
+            // The gear of the player bar opens the quality and speed options.
+            v.findViewById<View>(androidx.media3.ui.R.id.exo_settings)?.setOnClickListener { vm.settingsOpen = true }
             v
         },
         update = {
@@ -321,6 +329,45 @@ private fun saveResume(i: StreamInfo, posMs: Long) {
     // Finished (ended, or in the last seconds): the saved point is deleted. A partial watch keeps it.
     if (st == Player.STATE_ENDED || posMs >= i.duration * 1000 - 10_000) Prefs.resumeClear(id)
     else if (posMs > 5_000) Prefs.resumeSet(id, posMs)
+}
+
+@Composable
+private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(50)).background(if (selected) Pal.Red else Pal.Card2)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    ) { Text(label, style = Txt.Label.copy(color = Pal.White)) }
+}
+
+/** Options of the player gear: video quality and playback speed. */
+@Composable
+fun PlayerSettings(vm: AppViewModel, heights: List<Int>, current: Int, onQuality: (Int) -> Unit) {
+    if (!vm.settingsOpen) return
+    val ctx = LocalContext.current
+    var speed by remember { mutableStateOf(PlayerHub.get(ctx).playbackParameters.speed) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = { vm.settingsOpen = false }) {
+        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF1B1B1D)).padding(20.dp)) {
+            if (heights.isNotEmpty() && current > 0) {
+                Text("Quality", style = Txt.Label.copy(color = Pal.Gray))
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    heights.forEach { h -> OptionChip("${h}p", h == current) { vm.settingsOpen = false; onQuality(h) } }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+            Text("Speed", style = Txt.Label.copy(color = Pal.Gray))
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { sp ->
+                    OptionChip(if (sp == 1f) "Normal" else "${sp}x", sp == speed) {
+                        speed = sp
+                        PlayerHub.get(ctx).setPlaybackSpeed(sp)
+                        vm.settingsOpen = false
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -420,6 +467,8 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
         if (used > 0) quality = used else vm.say("That quality is not available")
     }
 
+    PlayerSettings(vm, heights, quality) { pick(it) }
+
     DisposableEffect(s.url) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -458,7 +507,6 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
             ) {
                 FillToggle(vm)
-                if (heights.isNotEmpty() && quality > 0) QualityChip(heights, quality) { pick(it) }
             }
         }
         return
@@ -477,9 +525,7 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
             Box(Modifier.align(Alignment.TopStart).padding(4.dp)) {
                 IconTap(R.drawable.ic_arrow_back, { vm.pop() })
             }
-            if (heights.isNotEmpty() && quality > 0) {
-                Box(Modifier.align(Alignment.TopEnd).padding(10.dp)) { QualityChip(heights, quality) { pick(it) } }
-            }
+
         }
         val i = info
         LazyColumn(Modifier.fillMaxSize()) {
@@ -519,12 +565,12 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
 
 @Composable
 fun ChannelScreen(vm: AppViewModel, s: Screen.Channel) {
-    var header by remember(s.url) { mutableStateOf<ChannelHeader?>(null) }
+    var header by vm.keepOf("ch:${s.url}:header") { mutableStateOf<ChannelHeader?>(null) }
     var error by remember(s.url) { mutableStateOf<String?>(null) }
-    var tab by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
+    var tab by vm.keepOf("ch:${s.url}:tab") { mutableIntStateOf(0) }
 
     LaunchedEffect(s.url) {
+        if (header != null) return@LaunchedEffect
         try {
             header = YtRepo.channel(s.url)
         } catch (e: CancellationException) {
@@ -550,13 +596,14 @@ fun ChannelScreen(vm: AppViewModel, s: Screen.Channel) {
                 }
                 Tabs(listOf("Videos", "Playlists"), tab, { tab = it })
                 Spacer(Modifier.height(4.dp))
-                val pagers = remember(h) {
+                val pagers = vm.keepOf("ch:${s.url}:pagers") {
                     listOf(h.videosTab, h.playlistsTab).map { handler ->
-                        handler?.let { hd -> Pager(scope) { page -> YtRepo.channelTab(hd, page) } }
+                        handler?.let { hd -> Pager(vm.uiScope) { page -> YtRepo.channelTab(hd, page) } }
                     }
                 }
                 val p = pagers[tab]
-                if (p == null) CenterMessage("Nothing here") else ItemList(vm, p)
+                if (p == null) CenterMessage("Nothing here")
+                else ItemList(vm, p, state = vm.keepOf("ch:${s.url}:list$tab") { LazyListState() })
             }
         }
     }
@@ -566,12 +613,12 @@ fun ChannelScreen(vm: AppViewModel, s: Screen.Channel) {
 
 @Composable
 fun PlaylistScreen(vm: AppViewModel, s: Screen.Playlist) {
-    var header by remember(s.url) { mutableStateOf<PlaylistHeader?>(null) }
+    var header by vm.keepOf("pl:${s.url}:header") { mutableStateOf<PlaylistHeader?>(null) }
     var error by remember(s.url) { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    val selected: SnapshotStateList<String> = remember(s.url) { mutableStateListOf() }
+    val selected: SnapshotStateList<String> = vm.keepOf("pl:${s.url}:sel") { mutableStateListOf<String>() }
 
     LaunchedEffect(s.url) {
+        if (header != null) return@LaunchedEffect
         try {
             header = YtRepo.playlist(s.url)
         } catch (e: CancellationException) {
@@ -587,8 +634,8 @@ fun PlaylistScreen(vm: AppViewModel, s: Screen.Playlist) {
             error != null -> CenterMessage(error ?: "")
             h == null -> Loading()
             else -> {
-                val pager = remember(h) {
-                    Pager(scope, maxItems = 200) { page -> if (page == null) h.first else YtRepo.playlistMore(s.url, page) }
+                val pager = vm.keepOf("pl:${s.url}:pager") {
+                    Pager(vm.uiScope, maxItems = 200) { page -> if (page == null) h.first else YtRepo.playlistMore(s.url, page) }
                 }
                 LaunchedEffect(pager) { pager.ensureStarted() }
                 val videos = pager.items.filterIsInstance<Item.Video>()
@@ -614,7 +661,7 @@ fun PlaylistScreen(vm: AppViewModel, s: Screen.Playlist) {
                     }
                 }
                 Box(Modifier.weight(1f)) {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), state = vm.keepOf("pl:${s.url}:list") { LazyListState() }) {
                         itemsIndexed(videos) { _, v ->
                             val on = v.url in selected
                             Row(

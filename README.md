@@ -4,7 +4,14 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
-## Versión 3.3 (final)
+## Versión 3.4
+
+- **YouTube, volver atrás:** al regresar de un video, la búsqueda, el canal o la lista vuelven tal como estaban (mismos videos cargados, misma posición); ya no se recargan desde el inicio.
+- **Calidad en el engranaje:** el botón de calidad flotante se quitó; ahora el engranaje de la barra del reproductor abre Calidad y Velocidad.
+- **YouTube en español:** los títulos y textos se piden en español (Perú); si un video tiene título solo en inglés, se muestra en inglés.
+- **Facebook, descargas:** cada archivo recibe un nombre propio (antes todos se llamaban igual y la app tomaba los siguientes como "ya descargados", por eso solo aparecía el primero). El archivo descargado se reescribe como MP4 normal (antes se guardaba en el formato de streaming de Facebook, que algunos reproductores no abren). La lista de formatos abre al instante y el tamaño aparece después.
+
+## Versión 3.3
 
 - **Facebook:** se quitó el reproductor; queda solo el botón de descarga (en videos, reels y cada cuadro de la lista de reels).
 - **YouTube, pantalla completa en dos funciones:** el botón de pantalla completa gira el teléfono y muestra el video con su tamaño y proporción originales. El botón "Fill" (arriba a la derecha, junto a la calidad) lo expande para llenar toda la pantalla, incluida la zona de la cámara; "Original" vuelve al tamaño normal.
@@ -179,8 +186,8 @@ Al terminar el push, GitHub empieza a compilar solo. Tarda entre 6 y 15 minutos 
 **Opción B (versión oficial con tag):**
 
 ```
-git tag v3.3
-git push origin v3.3
+git tag v3.4
+git push origin v3.4
 ```
 
 El APK aparece en la pestaña **Releases** del repo, ya listo para bajar.
@@ -206,7 +213,7 @@ YouTube cambia seguido y la librería de extracción se actualiza para seguirlo.
 
 1. Mira la última versión en https://github.com/TeamNewPipe/NewPipeExtractor/releases
 2. Abre `gradle/libs.versions.toml` y cambia la línea `newpipe = "v0.26.5"` por la nueva (con la `v`).
-3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.3`, `git push origin v3.3`) y reinstala.
+3. Terminal: `git add .`, `git commit -m "Actualizar extractor"`, `git push`. Luego saca una versión nueva (`git tag v3.4`, `git push origin v3.4`) y reinstala.
 
 ## 8. Cambiar el ícono o el splash
 
