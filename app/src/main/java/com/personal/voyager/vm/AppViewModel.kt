@@ -432,6 +432,28 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Looks inside every candidate file (what is picture, sound or both) and then shows the real qualities. */
+    fun downloadFbCandidates(
+        cands: List<com.personal.voyager.fb.MediaSniffer.Cand>, title: String, thumb: String?,
+        fallback: com.personal.voyager.fb.MediaSniffer.Picked?,
+    ) {
+        sheetJob?.cancel()
+        sheet = SheetUi.Loading
+        sheetJob = viewModelScope.launch {
+            val probed = coroutineScope {
+                cands.map { c -> async { c to kotlinx.coroutines.withTimeoutOrNull(9_000) { com.personal.voyager.fb.MediaProbe.probe(c.url) } } }
+                    .map { it.await() }
+            }
+            val real = com.personal.voyager.fb.MediaProbe.build(probed)
+            val picked = real ?: fallback
+            com.personal.voyager.fb.MediaProbe.writeReport(com.personal.voyager.fb.MediaProbe.report(title, probed, picked))
+            if (picked == null) {
+                sheet = null
+                say("No video found yet. Let it play a few seconds and tap download again")
+            } else downloadFbSniff(picked, title, thumb)
+        }
+    }
+
     /** Every quality of the video being watched (see MediaSniffer). */
     fun downloadFbSniff(p: com.personal.voyager.fb.MediaSniffer.Picked, title: String, thumb: String?) {
         val rows = p.options.mapIndexed { i, o ->

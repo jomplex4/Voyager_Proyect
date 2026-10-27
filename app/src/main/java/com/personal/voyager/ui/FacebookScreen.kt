@@ -259,10 +259,10 @@ private class Bridge(private val vm: AppViewModel) {
                 MediaSniffer.noteAvailable(all)
             }
             val id = Regex("(?:/reel/|/videos/|[?&]v=)(\\d{6,})").find(url)?.groupValues?.get(1)
-            val sniffed = if (res != "-" && src.isEmpty()) MediaSniffer.pick(id) else null
+            val cands = if (res != "-" && src.isEmpty()) MediaSniffer.candidates(id) else emptyList()
             when {
                 src.isNotEmpty() -> vm.downloadFbSrc(src, url, clean(title), poster.ifEmpty { null })
-                sniffed != null -> vm.downloadFbSniff(sniffed, clean(title), poster.ifEmpty { null })
+                cands.isNotEmpty() -> vm.downloadFbCandidates(cands, clean(title), poster.ifEmpty { null }, MediaSniffer.pick(id))
                 !videoLink.containsMatchIn(url) -> vm.say("Open the video first, then tap download")
                 else -> vm.downloadVideoUrl(url)
             }

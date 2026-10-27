@@ -13,6 +13,7 @@ import android.util.Base64
 object MediaSniffer {
     class Opt(val height: Int, val url: String, val muxed: Boolean, val codec: String)
     class Picked(val options: List<Opt>, val audio: String?)
+    class Cand(val url: String, val kind: Int, val height: Int, val asset: String?, val count: Int, val tag: String)
 
     private class E(
         val key: String, var url: String, val kind: Int, val height: Int, val asset: String?,
@@ -80,6 +81,23 @@ object MediaSniffer {
     }
 
     /** "H.264", "AV1", "VP9", "HEVC" or "" when the address does not say. */
+    /** Files that may belong to the video being watched; MediaProbe then looks inside them to know what each one is. */
+    @Synchronized
+    fun candidates(wantedId: String?): List<Cand> {
+        val now = System.currentTimeMillis()
+        val merged = LinkedHashMap<String, E>()
+        avail.forEach { merged[it.key] = it.value }
+        seen.forEach { if (now - it.value.time < 5 * 60_000) merged[it.key] = it.value }
+        val recent = seen.values.filter { now - it.time < 5 * 60_000 }
+        val newest = recent.maxOfOrNull { it.time } ?: 0L
+        val asset = if (wantedId != null && merged.values.any { it.asset == wantedId }) wantedId
+        else recent.maxByOrNull { it.time }?.asset
+        val pool = if (asset != null) merged.values.filter { it.asset == asset || (it.asset == null && it.time >= newest - 60_000) }
+        else recent.filter { newest - it.time < 60_000 }
+        return pool.sortedWith(compareBy<E>({ if (it.count > 0) 0 else 1 }, { -it.count }, { -it.time })).take(16)
+            .map { Cand(it.url, it.kind, it.height, it.asset, it.count, it.tag) }
+    }
+
     private fun codecOf(tag: String): String = when {
         tag.contains("av1") || tag.contains("av01") -> "AV1"
         tag.contains("vp9") || tag.contains("vp09") -> "VP9"

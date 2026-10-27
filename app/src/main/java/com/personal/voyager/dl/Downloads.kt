@@ -217,6 +217,11 @@ object Downloads {
         } catch (e: Throwable) {
             val msg = if (e is java.io.IOException && e.message?.contains("space", true) == true) e.message
             else YtRepo.friendly(e)
+            get(id)?.let { j ->
+                if (j.source.startsWith("fb")) {
+                    com.personal.voyager.fb.MediaProbe.writeReport("download FAILED (${j.choice}): ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }
             update(id, true) { it.copy(status = JobStatus.FAILED, error = msg, speedBps = 0) }
         }
     }
