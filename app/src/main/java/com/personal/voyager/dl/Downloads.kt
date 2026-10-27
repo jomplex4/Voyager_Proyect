@@ -328,20 +328,24 @@ object Downloads {
                 out = File(tmp, "$id.out.$ext")
                 withContext(Dispatchers.IO) {
                     Bg.low { Mux.mergeVideoAudio(files[0].absolutePath, files[1].absolutePath, out.absolutePath, plan.webm, check) { proc(it) } }
-                    if (plan.video.sig.startsWith("fb")) Mux.validateVideo(out.absolutePath)
+                    if (plan.video.sig.startsWith("fb")) Mux.validateVideo(out.absolutePath, true)
                 }
             }
             is Plan.Direct -> {
                 ext = plan.ext
                 mime = plan.mime
-                if (plan.remux) {
-                    // Facebook files come in a streaming layout many players refuse: rewrite them as a normal MP4.
+                if (plan.remux && Mux.isFragmented(files[0].absolutePath)) {
+                    // A streaming-layout file many players refuse: rewrite it as a normal MP4.
                     out = File(tmp, "$id.out.mp4")
                     withContext(Dispatchers.IO) {
                         Bg.low { Mux.remuxToMp4(files[0].absolutePath, out.absolutePath, check) { proc(it) } }
-                        Mux.validateVideo(out.absolutePath)
+                        Mux.validateVideo(out.absolutePath, plan.needAudio)
                     }
-                } else out = files[0]
+                } else {
+                    // Already a regular MP4 (the complete file Facebook offers): saved exactly as downloaded.
+                    out = files[0]
+                    if (plan.remux) withContext(Dispatchers.IO) { Mux.validateVideo(out.absolutePath, plan.needAudio) }
+                }
             }
             is Plan.M4a -> {
                 ext = "m4a"

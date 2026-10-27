@@ -46,7 +46,7 @@ sealed class Plan(val sources: List<Src>, val tag: String) {
     class Merge(val video: Src, val audio: Src, val webm: Boolean, tag: String) :
         Plan(listOf(video, audio), tag)
 
-    class Direct(val src: Src, val mime: String, val ext: String, val isVideo: Boolean, tag: String, val remux: Boolean = false) :
+    class Direct(val src: Src, val mime: String, val ext: String, val isVideo: Boolean, tag: String, val remux: Boolean = false, val needAudio: Boolean = false) :
         Plan(listOf(src), tag)
 
     class M4a(val src: Src, tag: String) : Plan(listOf(src), tag)

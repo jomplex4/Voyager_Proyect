@@ -438,13 +438,19 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             val base = if (o.height > 0) "${o.height}p" else "Video"
             val codec = if (o.codec.isNotEmpty() && o.codec != "H.264") " (${o.codec})" else ""
             val sound = if (p.audio == null && !o.muxed) " · no sound" else ""
-            "F:Q$i" to base + codec + sound
+            val whole = if (o.muxed) " · MP4" else ""
+            "F:Q$i" to base + whole + codec + sound
         }
         val files = buildString {
             p.options.forEachIndexed { i, o -> append("v\t$i\t${o.height}\t${if (o.muxed) 1 else 0}\t${o.url}\n") }
             p.audio?.let { append("a\t$it\n") }
         }
-        val pre = p.options.indexOfFirst { it.height == 720 }.let { if (it >= 0) it else 0 }
+        // Default: the complete MP4 (sound included) up to 720p; otherwise a 720p one; otherwise the first.
+        val pre = p.options.indexOfFirst { it.muxed && it.height in 1..720 }.let { m ->
+            if (m >= 0) m else p.options.indexOfFirst { it.muxed }.let { m2 ->
+                if (m2 >= 0) m2 else p.options.indexOfFirst { it.height == 720 }.let { if (it >= 0) it else 0 }
+            }
+        }
         fbSheet(title, thumb, rows, "F:Q$pre", files, "fbsniff") {
             coroutineScope {
                 val au = p.audio?.let { u -> async { kotlinx.coroutines.withTimeoutOrNull(12_000) { Facebook.probeSize(u) } ?: -1L } }

@@ -22,7 +22,7 @@ object MediaSniffer {
     private val seen = LinkedHashMap<String, E>()
     private val avail = LinkedHashMap<String, E>()
 
-    private fun parse(raw: String, at: Long, requested: Boolean) {
+    private fun parse(raw: String, at: Long, requested: Boolean, forceMuxed: Boolean = false, hint: Int = 0) {
         if (!raw.contains(".mp4") || !(raw.contains("fbcdn") || raw.contains("facebook"))) return
         val u = runCatching { Uri.parse(raw) }.getOrNull() ?: return
         val host = u.host ?: return
@@ -30,13 +30,13 @@ object MediaSniffer {
         val tag = u.getQueryParameter("efg")?.let {
             runCatching { String(Base64.decode(it.replace('-', '+').replace('_', '/').trimEnd('='), Base64.DEFAULT)) }.getOrNull()
         }?.lowercase() ?: ""
-        val kind = when {
+        val kind = if (forceMuxed) 2 else when {
             tag.contains("audio") -> 1
             tag.contains("progressive") -> 2
             tag.contains("dash") || tag.contains("video") -> 0
             else -> 2
         }
-        val height = Regex("(\\d{3,4})p").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val height = Regex("(\\d{3,4})p").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: hint
         val asset = Regex("(?:xpv_asset_id|video_id)\\D{1,4}(\\d{5,})").find(tag)?.groupValues?.get(1)
         // The player asks for pieces (bytestart/byteend); without them the address is the whole file.
         var clean = raw.replace(Regex("[?&](bytestart|byteend)=\\d+"), "")
@@ -70,7 +70,13 @@ object MediaSniffer {
     /** Addresses found in the data of the page (all qualities). */
     fun noteAvailable(list: String) {
         val now = System.currentTimeMillis()
-        list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { parse(it, now, false) }
+        list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { l ->
+            if (l.startsWith("P|")) {
+                // "P|<name of the field>|<address>": the complete MP4 (picture and sound) Facebook offers
+                val p = l.split("|", limit = 3)
+                if (p.size == 3) parse(p[2], now, false, true, if (p[1].contains("hd", true)) 720 else 360)
+            } else parse(l, now, false)
+        }
     }
 
     /** "H.264", "AV1", "VP9", "HEVC" or "" when the address does not say. */
@@ -112,9 +118,9 @@ object MediaSniffer {
         val unknown = vids.filter { codecOf(it.tag).isEmpty() }
         val usable = if (h264.isNotEmpty()) h264 + unknown else if (unknown.isNotEmpty()) unknown else vids
         val options = usable.groupBy { it.height }.map { (h, list) ->
-            val best = list.sortedWith(compareBy<E>({ -it.count }, { -it.time })).first()
+            val best = list.sortedWith(compareBy<E>({ if (it.kind == 2) 0 else 1 }, { -it.count }, { -it.time })).first()
             Opt(h, best.url, best.kind == 2, codecOf(best.tag))
-        }.sortedByDescending { it.height }
+        }.sortedWith(compareBy<Opt>({ -it.height }, { if (it.muxed) 0 else 1 }))
         var audio = pool.filter { it.kind == 1 }.sortedWith(compareBy<E>({ -it.count }, { -it.time })).firstOrNull()?.url
         if (audio == null) {
             // The sound file does not always carry the id of its video: take the one requested closest in time.

@@ -90,7 +90,7 @@ object Resolver {
             }
             return Plan.Merge(mk(v.url, vs), mk(a, asz), false, tag)
         }
-        return Plan.Direct(mk(v.url, Facebook.probeSize(v.url)), "video/mp4", "mp4", true, tag, remux = true)
+        return Plan.Direct(mk(v.url, Facebook.probeSize(v.url)), "video/mp4", "mp4", true, tag, remux = true, needAudio = v.muxed)
     }
 
     private suspend fun resolveSrc(job: DlJob): Plan {

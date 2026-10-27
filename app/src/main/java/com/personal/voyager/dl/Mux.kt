@@ -110,9 +110,31 @@ object Mux {
         }
     }
 
-    /** Re-muxes the first audio track of any container into a clean .m4a (MPEG-4) file. */
-    /** Throws when the file has no readable video: better a clear error than a broken file in the list. */
-    fun validateVideo(path: String) {
+    /** True for streaming-layout MP4 (in fragments). A regular MP4 is kept exactly as Facebook delivered it. */
+    fun isFragmented(path: String): Boolean = runCatching {
+        java.io.RandomAccessFile(path, "r").use { f ->
+            var pos = 0L
+            val len = f.length()
+            var n = 0
+            var result = false
+            while (pos + 8 <= len && n++ < 40) {
+                f.seek(pos)
+                val size32 = f.readInt().toLong() and 0xFFFFFFFFL
+                val b = ByteArray(4)
+                f.readFully(b)
+                val type = String(b, Charsets.ISO_8859_1)
+                if (type == "moof" || type == "sidx") { result = true; break }
+                if (type == "mdat") break
+                val size = when (size32) { 1L -> f.readLong(); 0L -> len - pos; else -> size32 }
+                if (size < 8) { result = true; break }
+                pos += size
+            }
+            result
+        }
+    }.getOrDefault(true)
+
+    /** Throws when the file has no readable video (or no sound when it must have it): a clear error beats a broken file in the list. */
+    fun validateVideo(path: String, needAudio: Boolean = false) {
         val r = android.media.MediaMetadataRetriever()
         try {
             r.setDataSource(path)
@@ -122,16 +144,20 @@ object Mux {
             val ex = MediaExtractor()
             try {
                 ex.setDataSource(path)
+                var videoChecked = false
+                var hasAudio = false
                 for (i in 0 until ex.trackCount) {
                     val f = ex.getTrackFormat(i)
                     val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
-                    if (!mime.startsWith("video/")) continue
+                    if (mime.startsWith("audio/")) hasAudio = true
+                    if (!mime.startsWith("video/") || videoChecked) continue
+                    videoChecked = true
                     val probe = MediaFormat.createVideoFormat(mime, f.getInteger(MediaFormat.KEY_WIDTH), f.getInteger(MediaFormat.KEY_HEIGHT))
                     if (android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).findDecoderForFormat(probe) == null) {
                         throw IOException("This quality is saved in a format ($mime) that this phone cannot play. Choose another quality")
                     }
-                    break
                 }
+                if (needAudio && !hasAudio) throw IOException("The video was saved without sound. Choose another quality")
             } finally {
                 ex.release()
             }

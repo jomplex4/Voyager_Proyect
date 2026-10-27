@@ -93,12 +93,15 @@ private val INJECT = """
   document.head.appendChild(st);
   var last = 0;
   window.__vyTouch = 0;
-  var urlSet = {}, urlN = 0;
+  var urlSet = {}, urlN = 0, progSet = {};
   function harvest(text){
     if (!text || text.length > 4000000 || text.indexOf('.mp4') < 0) return;
     var t = text.split('\\/').join('/').split('\\u0025').join('%').split('\\u0026').join('&').split('&amp;').join('&');
     var re = /https:\/\/[^"'\s\\<>]+?\.mp4[^"'\s\\<>]*/g, m;
     while ((m = re.exec(t)) && urlN < 1500) { var u = m[0]; if (/fbcdn|facebook/.test(u) && !urlSet[u]) { urlSet[u] = 1; urlN++; } }
+    // The complete MP4 (picture and sound together) that Facebook itself offers for the video.
+    var kre = /"(browser_native_hd_url|browser_native_sd_url|playable_url_quality_hd|playable_url|hd_src|sd_src)"\s*:\s*"(https:[^"]+)"/g, k;
+    while ((k = kre.exec(t)) && urlN < 1500) { var pu = k[2]; if (!progSet[pu]) { progSet[pu] = k[1]; urlSet[pu] = 1; urlN++; } }
   }
   var ofetch = window.fetch;
   if (ofetch) window.fetch = function(){
@@ -114,7 +117,7 @@ private val INJECT = """
   function all(){
     var sc = document.scripts, tot = 0;
     for (var i = 0; i < sc.length; i++) { var x = sc[i].textContent; if (x && x.indexOf('.mp4') >= 0) { tot += x.length; if (tot > 6000000) break; harvest(x); } }
-    return Object.keys(urlSet).slice(-800).join('\n');
+    return Object.keys(urlSet).slice(-800).map(function(u){ return progSet[u] ? 'P|' + progSet[u] + '|' + u : u; }).join('\n');
   }
   document.addEventListener('touchstart', function(){ window.__vyTouch = Date.now(); }, true);
   var op = HTMLMediaElement.prototype.play;
@@ -145,11 +148,14 @@ private val INJECT = """
   }
   function srcOf(v){ var x = v && (v.currentSrc || v.src); return (x && /^https?:/.test(x)) ? x : ''; }
   function poster(v){ return (v && v.poster) ? v.poster : ''; }
-  function res(){
-    var out = [], l = performance.getEntriesByType('resource'), now = performance.now();
-    for (var i = 0; i < l.length; i++) { var e = l[i]; if (now - e.startTime < 40000 && /\.mp4/.test(e.name) && /fbcdn|facebook/.test(e.name)) out.push(e.name); }
-    return out.slice(-60).join('\n');
-  }
+  var reqs = [];
+  try {
+    new PerformanceObserver(function(l){
+      var es = l.getEntries();
+      for (var i = 0; i < es.length; i++) { var n = es[i].name; if (/\.mp4/.test(n) && /fbcdn|facebook/.test(n)) { reqs.push(n); if (reqs.length > 400) reqs.shift(); } }
+    }).observe({type: 'resource', buffered: true});
+  } catch (e) {}
+  function res(){ return reqs.slice(-150).join('\n'); }
   function withVideo(v, cb){ if (v && v.paused) { try { v.play(); } catch (e) {} setTimeout(cb, 1800); } else cb(); }
   function fire(fn){ var now = Date.now(); if (now - last < 2500) return; last = now; fn(); }
   function mk(cls, icon, onTap){
