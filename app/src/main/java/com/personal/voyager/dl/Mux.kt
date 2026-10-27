@@ -32,7 +32,7 @@ object Mux {
         val size = ex.readSampleData(buf, 0)
         if (size < 0) return false
         val flags = if ((ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-        info.set(0, size, ex.sampleTime, flags)
+        info.set(0, size, maxOf(0L, ex.sampleTime), flags) // some files start slightly before zero
         muxer.writeSampleData(outTrack, buf, info)
         ex.advance()
         return true
@@ -79,16 +79,16 @@ object Mux {
             var aDone = false
             var n = 0
             while (true) {
-                var vTime = if (vDone) Long.MAX_VALUE else vEx.sampleTime
-                if (vTime < 0) {
+                // The end of a stream is "no track left", never a negative time: Facebook's sound starts a few
+                // milliseconds before zero and was being dropped completely.
+                val vTime = if (vDone) Long.MAX_VALUE else if (vEx.sampleTrackIndex < 0) {
                     vDone = true
-                    vTime = Long.MAX_VALUE
-                }
-                var aTime = if (aDone) Long.MAX_VALUE else aEx.sampleTime
-                if (aTime < 0) {
+                    Long.MAX_VALUE
+                } else vEx.sampleTime
+                val aTime = if (aDone) Long.MAX_VALUE else if (aEx.sampleTrackIndex < 0) {
                     aDone = true
-                    aTime = Long.MAX_VALUE
-                }
+                    Long.MAX_VALUE
+                } else aEx.sampleTime
                 if (vDone && aDone) break
                 if (vTime <= aTime) {
                     if (!pump(vEx, vOut, muxer, buf, info)) vDone = true
@@ -205,7 +205,7 @@ object Mux {
                 val size = ex.readSampleData(buf, 0)
                 if (size < 0) break
                 val flags = if (ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-                info.set(0, size, ex.sampleTime, flags)
+                info.set(0, size, maxOf(0L, ex.sampleTime), flags)
                 muxer.writeSampleData(map[track] ?: break, buf, info)
                 if (durUs > 0 && n % 200 == 0) onProgress((ex.sampleTime.toFloat() / durUs).coerceIn(0f, 1f))
                 ex.advance()

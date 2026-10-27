@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 4.2
+
+**Facebook, el video quedaba sin sonido (causa encontrada con el informe de la app):** el audio de Facebook empieza unos milisegundos antes del cero (tiempo negativo, normal en ese formato). El unificador de imagen y sonido leía ese tiempo negativo como "fin del archivo" y descartaba todo el audio. Ahora el fin se detecta por "ya no quedan pistas", y los tiempos negativos se llevan a cero. También se quitó el sondeo de archivos (innecesario: las etiquetas de las direcciones sí se leían bien) que hacía más lenta la lista de formatos. Si una descarga de Facebook falla, el motivo queda anotado en `Voyager/facebook-report.txt`.
+
 ## Versión 3.5
 
 **Facebook, "saved without sound":** la app ya no adivina por el texto de la dirección qué archivo es imagen y cuál es sonido (Facebook no lo escribe como se suponía, por eso un audio de 697 KB aparecía como "Video"). Ahora, antes de mostrar la lista, lee los primeros bytes de cada archivo candidato y comprueba qué trae de verdad: imagen, sonido o ambos, su tamaño y su formato. Las opciones de la lista salen de eso. Cada vez que se pide una descarga de Facebook se añade un resumen a `Voyager/facebook-report.txt` (qué archivos se encontraron, qué había dentro de cada uno, qué se eligió, y el error si la descarga falla). Es un archivo de texto sin datos personales.
