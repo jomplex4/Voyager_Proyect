@@ -6,6 +6,19 @@ import java.io.File
 
 /** Writes what the extractor returned for a video (formats, qualities, delivery) into Voyager/youtube-report.txt. */
 object YtReport {
+    /** The real reason a video could not be read (YouTube's own message), for youtube-report.txt. */
+    fun error(url: String, e: Throwable) {
+        runCatching {
+            Storage.prepare()
+            val f = File(Storage.root(), "youtube-report.txt")
+            if (f.exists() && f.length() > 120_000) f.delete()
+            f.appendText(
+                "=== " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date()) +
+                    "  ERROR " + url + "\n  " + e.javaClass.simpleName + ": " + (e.message ?: "").replace("\n", " ").take(300) + "\n"
+            )
+        }
+    }
+
     fun write(info: StreamInfo) {
         runCatching {
             val sb = StringBuilder()

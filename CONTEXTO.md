@@ -1,79 +1,77 @@
 # VOYAGER: contexto del proyecto
 
 ## 1. Resumen
-Descargador personal de YouTube y Facebook para Android (alternativa sin anuncios a SnapTube) de Redy Mamani, marca DIGITALMINDS, uso privado (no Play Store). Versión 4.5, en uso diario en un Samsung Galaxy A03 Core (2 GB RAM, Android 11 Go).
+Descargador personal de YouTube y Facebook para Android, alternativa sin anuncios a SnapTube. Autor: Redy Mamani (marca DIGITALMINDS). Uso privado, nunca se publica. Versión 4.6. En uso en un Samsung Galaxy A03 Core (2 GB de RAM, Android 13), internet lento en muchos momentos. YouTube funciona (calidades hasta 1080p y audio). Facebook funciona: iniciar sesión, botón de descarga en videos y reels, descarga con sonido (confirmado por Redy tras la 4.2).
 
 ## 2. Tecnología
-- Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1 (ExoPlayer + MediaSession), OkHttp 4.12, Coil 2.7, NewPipeExtractor v0.26.5 (JitPack), LAME en Java (vendorizado, LGPL).
-- minSdk 30 (Android 11), target/compile 35. AGP 8.7.3, Gradle 8.9, desugaring.
-- Compila GitHub Actions (`.github/workflows/build.yml`); un tag `vX.Y` crea un Release con el APK. Firma con `voyager-release.jks` + `keystore.properties` (repo PRIVADO). Versiones en `gradle/libs.versions.toml`.
+- Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01), Material 3, Media3 1.5.1, OkHttp 4.12, Coil 2.7, androidx.webkit 1.12.1, LAME en Java (vendorizado).
+- Extractor de YouTube: NewPipeExtractor por JitPack, versión fijada en `gradle/libs.versions.toml` (clave `newpipe`). Ahora un commit de la rama dev (`6faf40681e`, 26-oct-2026).
+- minSdk 30, target/compile 35, AGP 8.7.3, Gradle 8.9, JDK 17. R8 activo (`app/proguard-rules.pro`).
+- Compila GitHub Actions (`.github/workflows/build.yml`). Un tag `vX.Y` crea un Release con `VOYAGER-vX.Y.apk`. Firma con `voyager-release.jks` + `keystore.properties` (repo PRIVADO). Cada lunes el flujo revisa si salió una versión nueva del extractor y, si sí, compila y publica "VOYAGER auto".
+- `versionName` está en `app/build.gradle.kts`; `versionCode = 100 + número de ejecución de GitHub`.
 
 ## 3. Estructura (`app/src/main/java/com/personal/voyager/`)
-- `yt/` YtRepo (búsqueda, canales, listas, caché de StreamInfo 10 min, sugerencias), Formats (calidades; etiqueta tipo YouTube para videos panorámicos).
-- `fb/` Facebook (scraping con cookie, DASH, caché 10 min), FbSession (cookies del WebView), Photo.
-- `dl/` Downloads (cola), Engine (descarga por rangos), Resolver, Mux (MediaMuxer), Mp3 (LAME), Tags (ID3/MP4), Cover, Storage (carpetas), Store (registro JSON), DownloadService (servicio silencioso), Bg (prioridad baja).
-- `player/` PlayerHub (ExoPlayer único, calidad, posición), PlaybackService (notificación multimedia).
-- `ui/` Splash, AppRoot (navegación, pantalla completa), DownloadScreens (inicio, búsqueda, detalle), PlayScreens, FormatSheet, FacebookScreen (WebView + JS), Components.
-- `vm/AppViewModel.kt`, `core/` (Prefs, Util, Net, NewPipeDownloader). `res/values/exo_overrides.xml` = tamaño de controles.
+- `yt/`: YtRepo (búsqueda, canales, listas, caché de StreamInfo 10 min, errores), Formats (calidades, audio, etiqueta tipo YouTube), YtReport (escribe `Voyager/youtube-report.txt`).
+- `fb/`: Facebook (lectura de página con cookie, último recurso), FbSession (cookies del WebView), MediaSniffer (archivos de video/audio que pide el reproductor de Facebook), MediaProbe (sondeo de archivos, sin uso normal; escribe `Voyager/facebook-report.txt`), Photo.
+- `dl/`: Downloads (cola), Engine (descarga por rangos con reanudación), Resolver (elige qué bajar), Mux (une audio y video, remux, validación), Mp3 (LAME), Tags, Cover, Storage (carpetas), Store (registro JSON), DownloadService, Bg.
+- `player/`: PlayerHub (ExoPlayer único), PlaybackService (notificación del reproductor).
+- `ui/`: AppRoot, DownloadScreens (inicio, resultados, canal, lista, detalle y reproductor de vista previa), FacebookScreen (WebView, script de botones, modos de inicio de sesión), PlayScreens, FormatSheet, Components, Theme. `FbPlayScreen.kt` queda vacío a propósito.
+- `vm/AppViewModel.kt`, `core/` (Prefs, Net, Util, NewPipeDownloader).
 
 ## 4. Funciones actuales
-- Splash como COMET con logo DIGITALMINDS; inicio con logo, lupa, ícono de Facebook y links copiados (YT/FB, expiran a 10 min).
-- Búsqueda con sugerencias; canales; listas con peso total; vista previa con calidad elegible, pantalla completa con zoom (cubre la cámara), ±10 s, pantalla encendida, continuar videos >10 min.
-- Descarga MP3 128/160/320 y M4A con portada y etiquetas; video 360p hasta el máximo (H.264 ≤1080p, VP9 arriba). Facebook SD/HD o DASH; reels y fotos desde la web de Facebook con sesión.
-- Máx. 2 DESCARGANDO a la vez, procesado sin límite. Carpetas `Voyager/Voyager video|music|photo`.
+- YouTube: búsqueda con sugerencias, canales, listas, vista previa con engranaje (calidad, velocidad, Original/Llenar pantalla), ±10 s, pantalla completa, continuar videos de más de 10 min, las pantallas conservan su posición al volver, títulos en español.
+- Descarga: MP3 128/160/320 y M4A con portada y etiquetas, video hasta la calidad máxima, máximo 2 descargas a la vez, pausa y reanudar sin reiniciar. Carpetas `Voyager/Voyager video`, `Voyager/Voyager music`, `Voyager/Voyager photo`. Notificación de descarga silenciosa; notificación del reproductor al salir de la app.
+- Facebook: pantalla completa con flecha, botón rojo en videos, reels y cada cuadro de reels, fotos a `Voyager photo`, enlaces copiados también.
 
-## 5. Historial
-- 1.0 base; 1.1 carpeta Voyager, sin notificación de descarga, portadas; 1.2 login FB, cola 2; 2.4 sin recarga al volver; 2.6 calidad y reanudar; 2.8 DASH FB; 2.10 modos de login FB; 2.11 FB pantalla completa; 2.12 subcarpetas; 2.13 login FB por página simple y sesión caducada.
+## 5. Bugs resueltos (no repetir)
+- Archivos con el mismo nombre en distintas versiones (PNG y WEBP): duplicados al descomprimir encima. No renombrar ni borrar archivos entre versiones.
+- Un import faltante rompe el build: revisar imports antes de entregar.
+- Facebook en blanco al iniciar sesión: solo funcionó el orden de modos `m` normal, `m` por software, `www` escritorio, `mbasic` por software, 8 s entre modos, sin borrar cookies (las primeras páginas dejan cookies que `mbasic` necesita). Después de iniciar sesión siempre se va a `m.facebook.com`.
+- Video negro en Facebook: la capa de software del WebView no muestra video; la web con sesión usa capa de hardware.
+- Facebook entrega AV1/VP9 si el WebView lo declara: `NO_NEW_CODECS` (script al inicio de la página) lo oculta para obtener H.264.
+- Facebook sin sonido: el audio empieza con tiempo negativo; `Mux.mergeVideoAudio` lo tomaba como fin del archivo. El fin es `sampleTrackIndex < 0` y los tiempos negativos se llevan a 0.
+- Facebook mismo video varias veces: el elegido se determina por el número del video (`xpv_asset_id` o `video_id` dentro de `efg`), no por conteo de peticiones.
+- Facebook solo una descarga visible: todos tenían el mismo nombre y se tomaban como duplicados; `fbName` agrega fecha y hora.
+- Reproductor en segundo plano sin notificación: se pedía el permiso una sola vez; ahora se pide hasta 3 veces y luego se abre la pantalla de notificaciones de la app.
+- Reanudar descarga: la barra volvía a 0; ahora cuenta lo ya descargado. El motor reanuda por tamaño del archivo parcial.
+- YouTube solo 360p con velocidad limitada: ver sección 8.
 
-## 6. Bugs resueltos (no repetir)
-- PNG y WEBP con el mismo nombre: duplicados al descomprimir encima. Nunca renombrar/borrar archivos entre versiones.
-- Import faltante rompió el build: auditar imports antes de entregar.
-- Calidades 536p/804p: alto real en videos panorámicos; usar `Formats.labelHeight`.
-- Notificación de descarga visible: canal viejo persistente; canal nuevo bloqueado y sin actualizaciones por segundo.
-- Sin notificación de reproducción: faltaba `addSession()` en PlaybackService.
-- Teléfono lageado: el reproductor externo reintentaba un URI con permiso temporal; se pasa URI de MediaStore y `NEW_TASK`.
-- Recarga del video al volver: no tocar pistas en ON_STOP/ON_START.
-- FB en blanco: UA personalizado y detector por texto; UA por defecto + detección de campo visible + modos.
-- FB LOGIN (2.16, LEER): solo funcionó el orden m(hardware), m(software), www(escritorio), mbasic(software) con 7 s entre modos, SIN borrar cookies: las primeras páginas dejan cookies que mbasic necesita. No volver a saltar directo a mbasic ni a llamar FbSession.logout() automáticamente (rompió el login en 2.13-2.15). Escape manual: mantener presionada la flecha.
-- 4.5 YouTube 360p/lento: tras v0.26.5 (20-jul-2026) NewPipeExtractor dev tuvo commits de YouTube el 20-22 oct 2026 (n-sig, client version, throttling URL). `newpipe` apunta ahora al commit `6faf40681e` (JitPack lo construye al primer pedido: reintentar el job). Verificado: las 39 clases importadas y `getVisionOsUserAgent`/`isVisionOsStreamingUrl`/`isWebStreamingUrl`/`NewPipe.init(d,l,c)` existen en dev. El workflow semanal no baja de versión (baseline v0.26.5). Si el build falla por JitPack o por API, volver a `v0.26.5` y revisar `youtube-report.txt`.
-- 4.4: el permiso POST_NOTIFICATIONS se pedía una sola vez (`askedNotifications`); ahora `notifPrompts` (<3) y luego `ACTION_APP_NOTIFICATION_SETTINGS` (`notifSettingsShown` <2). Sospecha del 360p único: el video podría ser archivo de un directo (POST_LIVE_STREAM, formatos DASH que `Formats.progressive` descarta): preguntar si fue directo y pedir `youtube-report.txt`.
-- 4.3 YouTube: solo 360p y sin audio en ciertos videos. Extractor v0.26.5 (20-jul-2026) es la última versión disponible. `Formats.progressive()` solo acepta `DeliveryMethod.PROGRESSIVE_HTTP`; si el extractor entrega los formatos adaptativos de otra forma (DASH/OTF, p. ej. grabaciones de directos) quedan fuera y solo sobrevive el muxed 360p. Ahora hay audio de respaldo (`Formats.pickMuxedAudio`) y `YtReport` escribe `Voyager/youtube-report.txt` (revisar `delivery=` de cada grupo). Si `delivery=DASH` en los adaptativos, falta soporte OTF/DASH en Engine/Resolver.
-- 4.2 CAUSA RAÍZ del video sin audio: `MediaExtractor.sampleTime` del audio de Facebook es ligeramente NEGATIVO al inicio; `mergeVideoAudio` lo tomaba como fin de flujo (`< 0`) y no escribía ningún sample de audio. Corregido: fin = `sampleTrackIndex < 0`; tiempos con `maxOf(0, t)` (también en `remuxToMp4`). El informe real mostró que el análisis por `efg` (vencode_tag `dash_ln_heaac_vbr3_audio`, `dash_h264-basic-gen2_720p`) era correcto; el sondeo `MediaProbe` falló (lectura de 512 KB con mala red) y ya NO se usa (queda el código y `writeReport`).
-- 3.5 (sondeo, sin uso): `MediaProbe.probe` lee 512 KB iniciales y analiza `moov/trak/hdlr/stsd` (vide/soun, códec, tkhd ancho/alto): ya no se clasifica por el texto de `efg`. `MediaSniffer.candidates` da hasta 16 archivos; `MediaProbe.build` arma `Picked` (H.264 primero, muxed primero); `AppViewModel.downloadFbCandidates` hace el sondeo en paralelo (9 s por archivo). Si todo falla se usa `MediaSniffer.pick` (heurística antigua). Cada intento escribe en `Voyager/facebook-report.txt` (revisar ese archivo al depurar Facebook).
-- 3.5 (MP4 completo): se capturan `browser_native_hd_url`/`browser_native_sd_url`/`playable_url*`/`hd_src`/`sd_src` de las respuestas y scripts (líneas `P|campo|url` hacia `MediaSniffer.noteAvailable`, kind=2). Opciones muxed primero; por defecto el muxed más alto ≤720p. `Plan.Direct(remux, needAudio)`: si `Mux.isFragmented` es falso el archivo se guarda tal cual; `validateVideo(path, needAudio)` exige audio. `PerformanceObserver` guarda las peticiones .mp4 (el buffer de Resource Timing se llena en Facebook).
-- 3.5 (capturas 27-oct): archivos FB ilegibles = AV1/VP9 (el WebView 154 los anuncia y Facebook los envía). `NO_NEW_CODECS` (document-start con androidx.webkit + onPageStarted) hace que `MediaSource.isTypeSupported/canPlayType/mediaCapabilities` rechacen av01/vp9/hevc; `MediaSniffer` prefiere H.264, marca el códec en la lista y busca el audio por cercanía de tiempo; `Mux.validateVideo` comprueba con `MediaCodecList.findDecoderForFormat`; `Downloads.frameThumb` crea portada.
-- 3.5 (auditoría): `friendly()` ya muestra los mensajes propios de IOException; `-keepclassmembers @JavascriptInterface` en proguard; `clearHistory()` tras abrir m.facebook.com; ventana de ajustes oculta barras en pantalla completa; efg se decodifica con base64 normalizado.
-- 3.5: MediaSniffer reescrito: cada archivo trae el id del video en `efg` (`xpv_asset_id`); `pick(id)` elige por el id del reel (antes por conteo: bajaba el mismo reel 3 veces) y lista todas las calidades (URLs vistas en peticiones + datos de la página recogidos por el script con hooks de fetch/XHR y scripts, enviados como 6.º parámetro de `Voyager.video`). Fuente "fbsniff": líneas `v\tindice\talto\tmuxed\turl` y `a\turl`; choice `F:Q<indice>`. `Mux.validateVideo` comprueba el MP4 de Facebook. Reanudar: progreso inicial desde el parcial. Engranaje = Calidad/Velocidad/Pantalla.
-- 3.4: pantallas guardan su estado en el ViewModel (`vm.keepOf`, se borra al hacer pop) para no recargar al volver; calidad/velocidad en un diálogo abierto por el engranaje (`exo_settings`, `vm.settingsOpen`); NewPipe en es/PE; FB: nombres únicos (`fbName`, antes duplicados por título igual), `Plan.Direct(remux=true)` + `Mux.remuxToMp4`, hoja de formatos inmediata.
-- FB 3.3: reproductor de Facebook ELIMINADO a pedido de Redy (solo descarga). `FbPlayScreen.kt` queda vacío a propósito (no se borran archivos). YouTube: pantalla completa = proporción original; `vm.fillScreen` (botón Fill/Original) = zoom que llena la pantalla.
-- FB 3.2: la lectura de la página falla (Facebook usa blob/MSE, `currentSrc` vacío). Solución: `fb/MediaSniffer.kt` observa los .mp4 de fbcdn (shouldInterceptRequest + `performance.getEntriesByType('resource')` del script), quita bytestart/byteend y elige el video/audio más pedido y reciente. Fuentes de descarga: "fbsniff" (url = video\naudio), "fbsrc" (archivo directo), "fb" (lectura de página, último recurso). Si deja de funcionar, ver qué .mp4 pide el reproductor (ajustar la clasificación por el parámetro `efg`).
-- FB 3.1: "Loading formats"/reproductor sin fin = lectura de página sin límite (Facebook deja la conexión abierta). Ahora: el script pasa `video.currentSrc` (archivo real) y se usa directo (source "fbsrc", choice "F:SRC"); si no hay, lectura con callTimeout 25 s, 15 s por página y tope total 30 s, versión de escritorio en www.
-- FB 3.0: video negro = capa de software en WebView; la web logueada usa capa de HARDWARE (no leer píxeles). Datos de usuario crecían por WebStorage de Facebook: se borra al salir. Botones play/descarga/mosaico en el script INJECT. Reproducir FB: Screen.FbPlay + PlayerHub.loadFb (DASH o SD/HD).
-- FB 2.18 (capturas de Redy): el formulario aparecía en el modo 2 (m.facebook.com, software) pero se saltaba al 3 (escritorio) a los 7 s mientras escribía, y tras entrar se quedaba en la web de escritorio. Ahora: 10 s por modo, no cambia si se toca la pantalla, y tras login siempre va a m.facebook.com. Botón Mode manual.
-- FB 2.17: con cookie guardada y página en blanco (cookie vieja, scheduleCheck no hacía nada) se detecta por píxeles (`looksBlank`) y se hace resetLogin(). Línea de estado abajo.
-- (Descartado, 2.15) FB en blanco con cookie vieja: no se confía en la cookie; siempre se abre mbasic.facebook.com (software) y es la página la que decide login/cuenta; la web completa (m.facebook.com) solo tras verlo en mbasic. Si la web completa manda a /login, se borra la sesión.
-- FB en blanco con sesión caducada: la app creía estar conectada; si Facebook manda a /login se reinicia el login simple.
-- FB bajaba la portada del reel: un solo botón fijo en páginas de video.
+## 6. Pendientes y límites conocidos
+- Algunos videos de YouTube solo entregan el formato de 360p "todo en uno" al extractor (caso "KULLAWADA RAIMONDI": sin formatos adaptativos, sin audio separado, sin HLS). Con la versión vieja salía solo 360p; con el commit nuevo puede salir un error de "no disponible". Probable causa: restricciones de YouTube para los clientes que usa NewPipe. SnapTube sí los lee porque usa otro método. No hay solución en la app hasta que el extractor lo soporte.
+- No se soportan formatos DASH/OTF ni grabaciones de directos (`Formats.progressive` solo acepta `PROGRESSIVE_HTTP`).
+- Facebook depende de su página: puede cambiar y romper los botones o la lectura.
 
-## 7. Pendientes
-- YouTube: si al abrir un video se pausa solo, probable estrangulamiento de YouTube (subir `newpipe`, ver sección 9); ajustar buffers en `PlayerHub.get`.
-- Facebook: no se pudo comprobar en un teléfono que los archivos descargados se reproduzcan; si no, revisar `Mux.validateVideo` y el mensaje que muestre.
-- Facebook cambia su página seguido: si fallan botones o login, ajustar INJECT y MODES en FacebookScreen.kt.
-- Nada se compila ni ejecuta localmente; cada cambio se valida con el build de GitHub y pruebas de Redy.
+## 7. Decisiones importantes
+- Acceso a todos los archivos (carpeta `Voyager` en el almacenamiento); parciales en `Voyager/.tmp`.
+- Sin FFmpeg para mantener la app ligera: `MediaMuxer` + LAME en Java.
+- El inicio de sesión de Facebook solo por WebView; la contraseña nunca pasa por la app.
+- Se eliminó el reproductor propio de Facebook a pedido de Redy; solo descarga.
+- Interfaz de la app en inglés; README, comandos y este archivo en español.
 
-## 8. Decisiones
-- "Acceso a todos los archivos" para la carpeta raíz Voyager; parciales en `Voyager/.tmp`.
-- Sin FFmpeg (peso); MediaMuxer + LAME Java. App ligera (~6 MB).
-- Login de Facebook solo por WebView (la contraseña nunca pasa por la app).
-
-## 9. Mantenimiento (YouTube/Facebook cambian)
-- AUTOMÁTICO: cada lunes Actions compara NewPipeExtractor con la última versión; si cambió, edita el toml, compila y publica el Release "auto-N". versionCode = 100 + número de ejecución (siempre crece). Hacer `git pull` antes de subir cambios.
-- YouTube falla: subir `newpipe` en `gradle/libs.versions.toml` a la última versión de github.com/TeamNewPipe/NewPipeExtractor/releases.
-- Facebook falla al leer videos: ajustar llaves/regex en `fb/Facebook.kt` (`hdKeys`, `sdKeys`, `dash_manifest`); botones de la web: script `INJECT` en `ui/FacebookScreen.kt`.
-
-## 10. Instrucciones para Claude
-- Responder en español, sin guiones largos (—). Usuario no experto: pasos claros.
-- Entregar SIEMPRE el ZIP completo del proyecto (se descomprime encima), subir `versionName`/`versionCode` y anotar en README.
-- Comandos de git en un solo bloque, un comando por línea (add, commit, push, tag, push tag).
-- No renombrar ni borrar archivos existentes; no cambiar ni agregar nada que no se pida; honestidad sobre lo no probado.
-- Si el build falla, pedir solo las líneas `e:` o `ERROR:`.
+## 8. Guía de actualización (YouTube y Facebook cambian; leer completo)
+### Qué debe adjuntar Redy al pedir una actualización
+1. `VOYAGER-project.zip` más reciente y este `CONTEXTO.md`.
+2. Según el problema, los informes de la carpeta `Voyager` del teléfono (se suben tal cual, sin datos personales): `youtube-report.txt` (qué formatos entregó YouTube y los errores reales) y/o `facebook-report.txt` (qué archivos vio Facebook y por qué falló una descarga).
+3. Una captura del error y, si falla la compilación, las líneas que empiezan con `e:` o `ERROR:` del paso "Build release APK" en la pestaña Actions de GitHub.
+4. El nombre o enlace del video que falla.
+### YouTube se queda atrás (solo 360p, errores, descargas lentas de 10 a 50 KB/s)
+1. Leer `youtube-report.txt`: `videoOnly: none` y `audio: none` indican que el extractor no recibió formatos adaptativos. Una línea `ERROR` trae el mensaje real de YouTube.
+2. Ver qué hay nuevo: `https://github.com/TeamNewPipe/NewPipeExtractor/releases.atom` (versiones) y `https://github.com/TeamNewPipe/NewPipeExtractor/commits/dev.atom` (cambios con "[YouTube]" posteriores al commit fijado).
+3. Comprobar compatibilidad antes de subir: descargar desde `raw.githubusercontent.com/TeamNewPipe/NewPipeExtractor/dev/extractor/src/main/java/...` y verificar que existen las 39 clases que el proyecto importa y estas funciones: `YoutubeParsingHelper.getVisionOsUserAgent`, `isVisionOsStreamingUrl`, `isWebStreamingUrl`, y `NewPipe.init(Downloader, Localization, ContentCountry)`.
+4. Cambiar `newpipe` en `gradle/libs.versions.toml` (tag nuevo o los primeros 10 caracteres de un commit). Subir `versionName`.
+5. La primera compilación con un commit nuevo puede fallar porque JitPack debe construirlo: en Actions usar "Re-run failed jobs" (el flujo ya reintenta 6 veces).
+6. Retroceso seguro: poner `newpipe = "v0.26.5"`. Esa versión funciona con la mayoría de videos.
+7. Si el extractor no tiene arreglo, la app no puede hacerlo; no inventar soluciones sin poder probarlas.
+### Facebook cambia (sin botones, lista vacía, descarga sin audio, no inicia sesión)
+1. Leer `facebook-report.txt`. Cada bloque lista los archivos vistos con `kind` (0 video, 1 audio, 2 completo), `h` (alto), `asset` y el `tag` decodificado de `efg` (`vencode_tag`: `dash_h264-basic-gen2_720p`, `dash_ln_heaac_vbr3_audio`). Si el `tag` ya no trae esas palabras, ajustar `MediaSniffer.parse` (clasificación) y `codecOf`.
+2. Botones y datos de la página: constante `INJECT` en `ui/FacebookScreen.kt` (JavaScript). Los campos que busca para el MP4 completo: `browser_native_hd_url`, `browser_native_sd_url`, `playable_url`, `playable_url_quality_hd`, `hd_src`, `sd_src`.
+3. Inicio de sesión: lista `MODES` en el mismo archivo; ver la regla de la sección 5 antes de tocarla.
+4. Unión de audio y video: `Mux.mergeVideoAudio`; validación: `Mux.validateVideo`.
+5. Formato AV1/VP9: `NO_NEW_CODECS` en `FacebookScreen.kt`.
+### Cómo debe trabajar Claude con este proyecto
+- Responder en español, sin guiones largos, con pasos claros. Redy no es programador.
+- Entregar siempre el ZIP completo (se descomprime encima de la carpeta), subir `versionName`, anotar en `README.md` y en este archivo.
+- Comandos de git en un solo bloque, un comando por línea: `git pull`, `git add .`, `git commit -m "VOYAGER X.Y"`, `git push`, `git tag vX.Y`, `git push origin vX.Y`. Cada tag nuevo debe ser distinto.
+- No renombrar ni borrar archivos existentes; no cambiar lo que funciona; no agregar funciones no pedidas.
+- Antes de decir que algo funciona, decir con honestidad que no se pudo probar en el teléfono. Revisar llaves e imports antes de entregar.
+- Pedir solo datos que Redy tenga a mano (capturas, informes de la carpeta `Voyager`, líneas de error de GitHub).

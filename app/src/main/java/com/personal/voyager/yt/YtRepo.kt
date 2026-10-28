@@ -160,7 +160,12 @@ object YtRepo {
             val hit = synchronized(cache) { cache[url]?.takeIf { now - it.at < 10 * 60_000 } }
             if (hit != null) return@withContext hit.info
         }
-        val info = StreamInfo.getInfo(service, url)
+        val info = try {
+            StreamInfo.getInfo(service, url)
+        } catch (e: Throwable) {
+            YtReport.error(url, e)
+            throw e
+        }
         synchronized(cache) {
             cache[url] = Cached(info, now)
             cache[info.url] = Cached(info, now)
@@ -197,14 +202,14 @@ object YtRepo {
         is GeographicRestrictionException -> "This video is not available in your country"
         is SignInConfirmNotBotException -> "YouTube asked to confirm you are not a bot, try again later"
         is PrivateContentException -> "This video is private"
-        is ContentNotAvailableException -> "This video is private or has been removed"
+        is ContentNotAvailableException -> "YouTube does not give this video to the app: " + (e.message ?: "private, removed or restricted").replace("\n", " ").take(150)
         is ContentNotSupportedException -> "This content is not supported"
         is IOException -> {
             val m = e.message ?: ""
             if (m.startsWith("HTTP") || m.contains("could not be read") || m.contains("no video or audio") || m.contains("took too long") || m.contains("cannot play") || m.contains("without sound")) m
             else "No connection"
         }
-        is ExtractionException -> "Could not read this video. YouTube may have changed (see README: update NewPipeExtractor)"
+        is ExtractionException -> "Could not read this video. YouTube may have changed (see CONTEXTO.md: update the extractor)"
         else -> e.message ?: "Something went wrong"
     }
 }

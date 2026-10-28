@@ -4,6 +4,11 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 4.6
+
+- **YouTube, mensajes de error reales:** cuando YouTube no entrega un video, la app muestra el motivo que YouTube da (antes decía siempre "privado o eliminado") y lo anota en `Voyager/youtube-report.txt`.
+- **CONTEXTO.md reescrito** con la guía para actualizar la app cuando YouTube o Facebook cambien: qué adjuntar, qué revisar y cómo volver a una versión anterior del extractor.
+
 ## Versión 4.5
 
 - **YouTube solo daba 360p, descargas lentísimas (11 KB/s) y audio sin avanzar:** el extractor de YouTube usado hasta ahora (v0.26.5, julio 2026) no tiene los arreglos publicados el 20 y 22 de octubre de 2026 ("Update n-sig parsing", "Extract client version from service worker data", URL del ayudante de anti-limitación). Sin ellos YouTube limita la velocidad y entrega solo el formato de 360p. Ahora se usa el commit `6faf40681e` (26-oct-2026). La primera compilación puede tardar unos 10 minutos y fallar al primer intento porque JitPack debe construir esa versión: en GitHub Actions, "Re-run failed jobs" y se completa. La actualización automática de los lunes ya no vuelve a la versión vieja.
