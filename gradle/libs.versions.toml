@@ -11,7 +11,7 @@ media3 = "1.5.1"               # verificado en github.com/androidx/media (tag 1.
 coil = "2.7.0"
 okhttp = "4.12.0"
 coroutines = "1.9.0"           # verificado en github.com/Kotlin/kotlinx.coroutines
-newpipe = "v0.26.5"            # ULTIMA version al construir; verificada en github.com/TeamNewPipe/NewPipeExtractor
+newpipe = "6faf40681e"          # commit del 26-oct-2026 (rama dev): trae los arreglos de YouTube del 20-22 oct que la version v0.26.5 (jul) no tiene. Si algun dia falla JitPack, volver a "v0.26.5"
 webkit = "1.12.1"             # scripts al inicio de la pagina de Facebook
 desugar = "2.1.5"              # misma version que usa NewPipe
 

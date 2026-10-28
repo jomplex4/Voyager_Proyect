@@ -4,6 +4,10 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 4.5
+
+- **YouTube solo daba 360p, descargas lentísimas (11 KB/s) y audio sin avanzar:** el extractor de YouTube usado hasta ahora (v0.26.5, julio 2026) no tiene los arreglos publicados el 20 y 22 de octubre de 2026 ("Update n-sig parsing", "Extract client version from service worker data", URL del ayudante de anti-limitación). Sin ellos YouTube limita la velocidad y entrega solo el formato de 360p. Ahora se usa el commit `6faf40681e` (26-oct-2026). La primera compilación puede tardar unos 10 minutos y fallar al primer intento porque JitPack debe construir esa versión: en GitHub Actions, "Re-run failed jobs" y se completa. La actualización automática de los lunes ya no vuelve a la versión vieja.
+
 ## Versión 4.4
 
 - **Notificación del reproductor:** si las notificaciones de la app están apagadas, la app vuelve a pedir el permiso (hasta 3 veces) y después abre la pantalla de notificaciones de la app (hasta 2 veces) con un aviso. Antes lo pedía una sola vez en la vida de la app. Revisión de funciones originales: servicio de reproducción, sesión de medios, notificación silenciosa de descargas, máximo 2 descargas, carpeta Voyager, abrir archivos en otra tarea, acceso a todos los archivos y pantalla de inicio siguen presentes.

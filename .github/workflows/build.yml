@@ -26,7 +26,9 @@ jobs:
           latest=$(curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/TeamNewPipe/NewPipeExtractor/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
           current=$(grep -m1 '^newpipe = ' gradle/libs.versions.toml | cut -d'"' -f2)
           echo "actual=$current ultima=$latest"
-          if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
+          # Con un commit fijo (no empieza por v) solo se cambia cuando sale una version NUEVA, distinta de la v0.26.5 de julio.
+          BASELINE="v0.26.5"
+          if [ -n "$latest" ] && [ "$latest" != "$current" ] && { [[ "$current" == v* ]] || [ "$latest" != "$BASELINE" ]; }; then
             sed -i "s/^newpipe = \"[^\"]*\"/newpipe = \"$latest\"/" gradle/libs.versions.toml
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "tag=$latest" >> "$GITHUB_OUTPUT"
@@ -49,10 +51,10 @@ jobs:
         if: github.event_name != 'schedule' || steps.np.outputs.changed == 'true'
         run: |
           ok=0
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5 6; do
             if gradle assembleRelease --no-daemon --stacktrace; then ok=1; break; fi
-            echo "Intento $i fallo, esperando 30 s..."
-            sleep 30
+            echo "Intento $i fallo (JitPack puede tardar en construir la libreria la primera vez), esperando 120 s..."
+            sleep 120
           done
           [ "$ok" = "1" ]
 
