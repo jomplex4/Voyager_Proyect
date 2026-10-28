@@ -96,6 +96,15 @@ object Prefs {
         get() = sp.getBoolean("asked_notif", false)
         set(v) = sp.edit().putBoolean("asked_notif", v).apply()
 
+    /** Times the notification permission was requested / the notification settings were opened (limited, not forever). */
+    var notifPrompts: Int
+        get() = sp.getInt("notif_prompts", 0)
+        set(v) = sp.edit().putInt("notif_prompts", v).apply()
+
+    var notifSettingsShown: Int
+        get() = sp.getInt("notif_settings_shown", 0)
+        set(v) = sp.edit().putInt("notif_settings_shown", v).apply()
+
     /** Last format choice, e.g. "A:MP3_320K" or "V:720". */
     var lastChoice: String
         get() = sp.getString("last_choice", "") ?: ""

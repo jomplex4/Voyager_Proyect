@@ -306,6 +306,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             say("Live streams cannot be downloaded")
             return
         }
+        com.personal.voyager.yt.YtReport.write(info)
         val audio = Formats.audioOptions(info).map { o ->
             SheetRow(
                 id = "A:" + o.kind.tag,

@@ -84,6 +84,10 @@ object Formats {
         originalFirst(info.audioStreams.filter { progressive(it) && it.format == MediaFormat.WEBMA_OPUS })
             .maxByOrNull { it.averageBitrate }
 
+    /** A complete (picture + sound) stream, used to take the sound from when the video has no audio-only stream. */
+    fun pickMuxedAudio(info: StreamInfo): VideoStream? =
+        info.videoStreams.filter { progressive(it) }.let { l -> l.firstOrNull { it.format == MediaFormat.MPEG_4 } ?: l.firstOrNull() }
+
     fun availableHeights(info: StreamInfo): List<Int> {
         val h = HashSet<Int>()
         info.videoOnlyStreams.filter { progressive(it) && it.height > 0 }.forEach { h.add(labelHeight(it)) }
@@ -140,9 +144,15 @@ object Formats {
     fun audioOptions(info: StreamInfo): List<AudioOpt> {
         val m4a = pickM4a(info)
         val opus = pickOpus(info)
-        if (m4a == null && opus == null) return emptyList()
         val dur = info.duration
         val out = ArrayList<AudioOpt>()
+        if (m4a == null && opus == null) {
+            if (pickMuxedAudio(info) == null) return emptyList()
+            // No audio-only stream: the sound is taken from the complete stream (about 96 kbps AAC).
+            out.add(AudioOpt(AudioKind.M4A_128, estBytes(96, dur), true))
+            for (k in listOf(AudioKind.MP3_128, AudioKind.MP3_160, AudioKind.MP3_320)) out.add(AudioOpt(k, estBytes(k.kbps, dur), true))
+            return out
+        }
         if (m4a != null) {
             val b = lengthOf(m4a)
             out.add(AudioOpt(AudioKind.M4A_128, if (b > 0) b else estBytes(m4a.averageBitrate, dur), b <= 0))

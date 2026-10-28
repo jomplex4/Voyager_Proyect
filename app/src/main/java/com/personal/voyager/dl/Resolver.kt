@@ -40,10 +40,11 @@ object Resolver {
             val kind = AudioKind.fromTag(choice.substring(2))
             val m4a = Formats.pickM4a(info)
             if (!kind.mp3) {
-                val a = m4a ?: throw NoStreamException("No audio stream found for this video")
+                val a: Stream = m4a ?: Formats.pickMuxedAudio(info) ?: throw NoStreamException("No audio stream found for this video")
                 return Plan.M4a(src(a), kind.tag)
             }
-            val a = m4a ?: Formats.pickOpus(info) ?: throw NoStreamException("No audio stream found for this video")
+            val a: Stream = m4a ?: Formats.pickOpus(info) ?: Formats.pickMuxedAudio(info)
+                ?: throw NoStreamException("No audio stream found for this video")
             return Plan.Mp3(src(a), kind.kbps, kind.tag)
         }
         val h = choice.removePrefix("V:").toIntOrNull() ?: 360

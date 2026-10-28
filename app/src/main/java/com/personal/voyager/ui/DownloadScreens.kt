@@ -426,12 +426,26 @@ fun DetailScreen(vm: AppViewModel, s: Screen.Detail) {
     val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { }
+    // The player in the notification bar needs notifications to be on. If they are off, ask (up to 3 times) and
+    // afterwards take the person to the notification settings of the app (twice at most).
     LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= 33 && !Prefs.askedNotifications &&
-            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            Prefs.askedNotifications = true
-            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (!androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 && Prefs.notifPrompts < 3 &&
+                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                Prefs.notifPrompts = Prefs.notifPrompts + 1
+                notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else if (Prefs.notifSettingsShown < 2) {
+                Prefs.notifSettingsShown = Prefs.notifSettingsShown + 1
+                vm.say("Turn on notifications for VOYAGER to see the player controls in the notification bar")
+                runCatching {
+                    ctx.startActivity(
+                        Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
         }
     }
     var info by remember(s.url) { mutableStateOf<StreamInfo?>(null) }

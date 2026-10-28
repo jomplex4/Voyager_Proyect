@@ -4,6 +4,14 @@ Descargador personal y ligero de **YouTube** y **Facebook** para Android (11 a 1
 
 Interfaz de la app en inglés. Este README y mis explicaciones, en español.
 
+## Versión 4.4
+
+- **Notificación del reproductor:** si las notificaciones de la app están apagadas, la app vuelve a pedir el permiso (hasta 3 veces) y después abre la pantalla de notificaciones de la app (hasta 2 veces) con un aviso. Antes lo pedía una sola vez en la vida de la app. Revisión de funciones originales: servicio de reproducción, sesión de medios, notificación silenciosa de descargas, máximo 2 descargas, carpeta Voyager, abrir archivos en otra tarea, acceso a todos los archivos y pantalla de inicio siguen presentes.
+
+## Versión 4.3
+
+- **YouTube, solo 360p y sin opción de audio:** si un video no trae audio por separado, la app ahora ofrece audio (M4A y MP3) tomándolo del video completo, así que siempre hay opción de audio. Cada vez que se abre la lista de formatos de YouTube se escribe `Voyager/youtube-report.txt` con lo que el extractor entregó (formatos, calidades, tipo de entrega); sirve para saber por qué un video concreto solo muestra baja calidad.
+
 ## Versión 4.2
 
 **Facebook, el video quedaba sin sonido (causa encontrada con el informe de la app):** el audio de Facebook empieza unos milisegundos antes del cero (tiempo negativo, normal en ese formato). El unificador de imagen y sonido leía ese tiempo negativo como "fin del archivo" y descartaba todo el audio. Ahora el fin se detecta por "ya no quedan pistas", y los tiempos negativos se llevan a cero. También se quitó el sondeo de archivos (innecesario: las etiquetas de las direcciones sí se leían bien) que hacía más lenta la lista de formatos. Si una descarga de Facebook falla, el motivo queda anotado en `Voyager/facebook-report.txt`.
